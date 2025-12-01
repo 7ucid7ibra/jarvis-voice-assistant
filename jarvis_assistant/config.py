@@ -7,6 +7,8 @@ DEFAULT_OLLAMA_MODEL = "qwen2.5:0.5b"
 DEFAULT_OLLAMA_API_URL = "http://localhost:11434/api/chat"
 DEFAULT_TTS_RATE = 190
 DEFAULT_TTS_VOLUME = 1.0
+DEFAULT_WAKE_WORD_ENABLED = False
+DEFAULT_WAKE_WORD = "jarvis"
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -17,39 +19,77 @@ COLOR_BUBBLE_ASSISTANT = "#0f1520"
 COLOR_TEXT_PRIMARY = "#ffffff"
 COLOR_TEXT_SECONDARY = "#888888"
 
-CONFIG_FILE = "settings.json"
+SETTINGS_FILE = "settings.json"
 
 class Config:
     def __init__(self):
-        self.whisper_model = DEFAULT_WHISPER_MODEL
-        self.ollama_model = DEFAULT_OLLAMA_MODEL
-        self.ollama_api_url = DEFAULT_OLLAMA_API_URL
-        self.tts_rate = DEFAULT_TTS_RATE
-        self.tts_volume = DEFAULT_TTS_VOLUME
-        self.load()
-
-    def load(self):
-        if os.path.exists(CONFIG_FILE):
+        self._settings = self._load_settings()
+    
+    def _load_settings(self):
+        if os.path.exists(SETTINGS_FILE):
             try:
-                with open(CONFIG_FILE, 'r') as f:
-                    data = json.load(f)
-                    self.whisper_model = data.get("whisper_model", DEFAULT_WHISPER_MODEL)
-                    self.ollama_model = data.get("ollama_model", DEFAULT_OLLAMA_MODEL)
-                    self.tts_rate = data.get("tts_rate", DEFAULT_TTS_RATE)
-                    self.tts_volume = data.get("tts_volume", DEFAULT_TTS_VOLUME)
-            except Exception as e:
-                print(f"Failed to load settings: {e}")
-
+                with open(SETTINGS_FILE, 'r') as f:
+                    return json.load(f)
+            except:
+                pass
+        return {}
+    
+    @property
+    def whisper_model(self):
+        return self._settings.get('whisper_model', DEFAULT_WHISPER_MODEL)
+    
+    @whisper_model.setter
+    def whisper_model(self, value):
+        self._settings['whisper_model'] = value
+    
+    @property
+    def ollama_model(self):
+        return self._settings.get('ollama_model', DEFAULT_OLLAMA_MODEL)
+    
+    @ollama_model.setter
+    def ollama_model(self, value):
+        self._settings['ollama_model'] = value
+    
+    @property
+    def ollama_api_url(self):
+        return self._settings.get('ollama_api_url', DEFAULT_OLLAMA_API_URL)
+    
+    @property
+    def tts_rate(self):
+        return self._settings.get('tts_rate', DEFAULT_TTS_RATE)
+    
+    @tts_rate.setter
+    def tts_rate(self, value):
+        self._settings['tts_rate'] = value
+    
+    @property
+    def tts_volume(self):
+        return self._settings.get('tts_volume', DEFAULT_TTS_VOLUME)
+    
+    @tts_volume.setter
+    def tts_volume(self, value):
+        self._settings['tts_volume'] = value
+    
+    @property
+    def wake_word_enabled(self):
+        return self._settings.get('wake_word_enabled', DEFAULT_WAKE_WORD_ENABLED)
+    
+    @wake_word_enabled.setter
+    def wake_word_enabled(self, value):
+        self._settings['wake_word_enabled'] = value
+    
+    @property
+    def wake_word(self):
+        return self._settings.get('wake_word', DEFAULT_WAKE_WORD)
+    
+    @wake_word.setter
+    def wake_word(self, value):
+        self._settings['wake_word'] = value.lower().strip()
+    
     def save(self):
-        data = {
-            "whisper_model": self.whisper_model,
-            "ollama_model": self.ollama_model,
-            "tts_rate": self.tts_rate,
-            "tts_volume": self.tts_volume
-        }
         try:
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(data, f, indent=4)
+            with open(SETTINGS_FILE, 'w') as f:
+                json.dump(self._settings, f, indent=2)
         except Exception as e:
             print(f"Failed to save settings: {e}")
 

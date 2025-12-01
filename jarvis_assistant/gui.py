@@ -149,9 +149,27 @@ class SettingsDialog(QDialog):
         self.rate_slider.setRange(100, 300)
         self.rate_slider.setValue(cfg.tts_rate)
         
+        # Wake word settings
+        from PyQt6.QtWidgets import QCheckBox, QHBoxLayout
+        self.wake_word_checkbox = QCheckBox("Enable Wake Word")
+        self.wake_word_checkbox.setChecked(cfg.wake_word_enabled)
+        self.wake_word_checkbox.setStyleSheet("color: white;")
+        
+        self.wake_word_edit = QLineEdit(cfg.wake_word)
+        self.wake_word_edit.setPlaceholderText("Enter wake word (e.g., jarvis)")
+        self.wake_word_edit.setEnabled(cfg.wake_word_enabled)
+        
+        # Connect checkbox to enable/disable text field
+        self.wake_word_checkbox.toggled.connect(self.wake_word_edit.setEnabled)
+        
+        wake_word_layout = QHBoxLayout()
+        wake_word_layout.addWidget(self.wake_word_checkbox)
+        wake_word_layout.addWidget(self.wake_word_edit)
+        
         layout.addRow("Ollama Model:", self.model_edit)
         layout.addRow("Whisper Model:", self.whisper_combo)
         layout.addRow("TTS Rate:", self.rate_slider)
+        layout.addRow("Wake Word:", wake_word_layout)
         
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save_settings)
@@ -164,6 +182,8 @@ class SettingsDialog(QDialog):
         cfg.ollama_model = self.model_edit.text()
         cfg.whisper_model = self.whisper_combo.currentText()
         cfg.tts_rate = self.rate_slider.value()
+        cfg.wake_word_enabled = self.wake_word_checkbox.isChecked()
+        cfg.wake_word = self.wake_word_edit.text()
         cfg.save()
         self.accept()
 
