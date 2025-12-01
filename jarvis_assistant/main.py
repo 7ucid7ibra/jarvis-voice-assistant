@@ -213,6 +213,10 @@ class JarvisController(QObject):
         sys.exit(self.app.exec())
 
     def handle_mic_click(self):
+        # Ignore clicks during THINKING state
+        if self.window.mic_btn.state == MicButton.STATE_THINKING:
+            return
+            
         if self.window.mic_btn.state == MicButton.STATE_IDLE:
             self.window.mic_btn.set_state(MicButton.STATE_LISTENING)
             self.window.set_status("Listening...")
@@ -221,10 +225,10 @@ class JarvisController(QObject):
             self.window.set_status("Processing...")
             self.recorder.stop_recording()
         elif self.window.mic_btn.state == MicButton.STATE_SPEAKING:
-            # Stop TTS playback
+            # Stop TTS playback without starting recording
             self.tts.stop()
-            self.window.mic_btn.set_state(MicButton.STATE_IDLE)
-            self.window.set_status("Idle")
+            # Note: tts.stop() will emit finished signal which calls handle_tts_finished
+            # which will set state to IDLE, so we don't need to do it here
 
     def handle_recording_finished(self, audio_data):
         if len(audio_data) == 0:
