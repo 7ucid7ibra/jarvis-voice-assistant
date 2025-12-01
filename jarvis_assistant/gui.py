@@ -236,6 +236,14 @@ class MainWindow(QMainWindow):
         # Dragging logic
         self.old_pos = None
 
+    def keyPressEvent(self, event):
+        """Handle keyboard shortcuts"""
+        if event.text().lower() == 'm':
+            # Trigger mic button click
+            self.mic_btn.clicked.emit()
+        else:
+            super().keyPressEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.old_pos = event.globalPosition().toPoint()
