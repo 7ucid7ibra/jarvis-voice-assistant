@@ -24,7 +24,7 @@ A fully local, "Jarvis-style" voice assistant for macOS with a modern PyQt6 GUI.
 Simply run the launcher script:
 
 ```bash
-./start.sh
+./scripts/start.sh
 ```
 
 The script will automatically:
@@ -37,7 +37,7 @@ The script will automatically:
 
 ## Usage
 
-1. **Start the app**: Run `./start.sh`
+1. **Start the app**: Run `./scripts/start.sh`
 2. **Talk**: Click the circular mic button to start recording
 3. **Stop**: Click again to stop and process your speech
 4. **Listen**: The assistant will respond with voice and text
@@ -66,7 +66,11 @@ Settings can be changed via the GUI settings dialog and are persisted to `settin
 
 ```
 VoiceAssistantMac/
-├── start.sh                    # Launcher script
+├── scripts/
+│   └── start.sh                # Launcher script
+├── docs/
+│   ├── git_workflow.md         # Git workflow rules
+│   └── HANDOFF.md              # Project handoff document
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
 └── jarvis_assistant/
@@ -100,7 +104,7 @@ If Ollama fails to start automatically, you can start it manually:
 ollama serve
 ```
 
-Then run `./start.sh` again.
+Then run `./scripts/start.sh` again.
 
 ## Dependencies
 
