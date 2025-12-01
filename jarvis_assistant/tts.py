@@ -43,3 +43,9 @@ class TTSWorker(QObject):
 
         self.engine.say(text)
         self.engine.runAndWait()
+
+    def stop(self):
+        """Stop current speech playback"""
+        if self.engine is not None:
+            self.engine.stop()
+            self.finished.emit()

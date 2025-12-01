@@ -220,6 +220,11 @@ class JarvisController(QObject):
         elif self.window.mic_btn.state == MicButton.STATE_LISTENING:
             self.window.set_status("Processing...")
             self.recorder.stop_recording()
+        elif self.window.mic_btn.state == MicButton.STATE_SPEAKING:
+            # Stop TTS playback
+            self.tts.stop()
+            self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+            self.window.set_status("Idle")
 
     def handle_recording_finished(self, audio_data):
         if len(audio_data) == 0:
