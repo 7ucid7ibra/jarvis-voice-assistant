@@ -164,16 +164,19 @@ class JarvisController(QObject):
         # Components
         self.recorder = AudioRecorder()
         self.stt = STTWorker()
+        self.wake_word_stt = STTWorker()  # Separate STT for wake word detection
         self.llm = LLMWorker()
         self.tts = TTSWorker()
         
         # Threads
         self.stt_thread = QThread()
+        self.wake_word_stt_thread = QThread()
         self.llm_thread = QThread()
         self.tts_thread = QThread()
         
         # Move workers
         self.stt.moveToThread(self.stt_thread)
+        self.wake_word_stt.moveToThread(self.wake_word_stt_thread)
         self.llm.moveToThread(self.llm_thread)
         self.tts.moveToThread(self.tts_thread)
         
@@ -184,9 +187,12 @@ class JarvisController(QObject):
         
         # Connect Worker Signals to Controller Slots
         self.recorder.finished.connect(self.handle_recording_finished)
+        self.recorder.wake_word_chunk.connect(self.wake_word_stt.transcribe)
         
         self.stt.finished.connect(self.handle_stt_finished)
         self.stt.error.connect(self.handle_error)
+        
+        self.wake_word_stt.finished.connect(self.handle_wake_word_detected)
         
         self.llm.finished.connect(self.handle_llm_finished)
         self.llm.error.connect(self.handle_error)
@@ -199,6 +205,7 @@ class JarvisController(QObject):
         
         # Start Threads
         self.stt_thread.start()
+        self.wake_word_stt_thread.start()
         self.llm_thread.start()
         self.tts_thread.start()
         
@@ -206,6 +213,12 @@ class JarvisController(QObject):
         self.conversation.load()
         for msg in self.conversation.messages:
             self.window.add_message(msg.content, msg.role == "user")
+        
+        # Start wake word listening if enabled
+        from .config import cfg
+        if cfg.wake_word_enabled:
+            self.recorder.start_wake_word_listening()
+            self.window.set_status(f"Listening for '{cfg.wake_word}'...")
             
         self.window.show()
 
@@ -218,6 +231,11 @@ class JarvisController(QObject):
             return
             
         if self.window.mic_btn.state == MicButton.STATE_IDLE:
+            # Stop wake word listening when user manually activates
+            from .config import cfg
+            if cfg.wake_word_enabled:
+                self.recorder.stop_wake_word_listening()
+            
             self.window.mic_btn.set_state(MicButton.STATE_LISTENING)
             self.window.set_status("Listening...")
             self.recorder.start_recording()
@@ -234,6 +252,11 @@ class JarvisController(QObject):
         if len(audio_data) == 0:
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
+            # Restart wake word listening if enabled
+            from .config import cfg
+            if cfg.wake_word_enabled:
+                self.recorder.start_wake_word_listening()
+                self.window.set_status(f"Listening for '{cfg.wake_word}'...")
             return
         
         self.window.mic_btn.set_state(MicButton.STATE_THINKING)
@@ -244,6 +267,11 @@ class JarvisController(QObject):
         if not text:
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
+            # Restart wake word listening if enabled
+            from .config import cfg
+            if cfg.wake_word_enabled:
+                self.recorder.start_wake_word_listening()
+                self.window.set_status(f"Listening for '{cfg.wake_word}'...")
             return
             
         self.conversation.add_message("user", text)
@@ -265,11 +293,36 @@ class JarvisController(QObject):
     def handle_tts_finished(self):
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
         self.window.set_status("Idle")
+        # Restart wake word listening if enabled
+        from .config import cfg
+        if cfg.wake_word_enabled:
+            self.recorder.start_wake_word_listening()
+            self.window.set_status(f"Listening for '{cfg.wake_word}'...")
 
     def handle_error(self, msg):
         self.window.set_status("Error")
         self.window.add_message(f"Error: {msg}", is_user=False)
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+        # Restart wake word listening if enabled
+        from .config import cfg
+        if cfg.wake_word_enabled:
+            self.recorder.start_wake_word_listening()
+            self.window.set_status(f"Listening for '{cfg.wake_word}'...")
+    
+    def handle_wake_word_detected(self, text):
+        """Check if wake word was detected in transcribed audio chunk"""
+        from .config import cfg
+        if not cfg.wake_word_enabled or not text:
+            return
+        
+        # Check if wake word is in the transcribed text
+        if cfg.wake_word.lower() in text.lower():
+            print(f"Wake word '{cfg.wake_word}' detected!", flush=True)
+            # Stop wake word listening and start normal recording
+            self.recorder.stop_wake_word_listening()
+            self.window.mic_btn.set_state(MicButton.STATE_LISTENING)
+            self.window.set_status("Listening...")
+            self.recorder.start_recording()
 
 if __name__ == "__main__":
     controller = JarvisController()
