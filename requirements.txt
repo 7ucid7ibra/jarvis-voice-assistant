@@ -1,0 +1,6 @@
+PyQt6
+sounddevice
+numpy<2
+git+https://github.com/openai/whisper.git
+pyttsx3
+requests
