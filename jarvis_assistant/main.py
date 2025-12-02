@@ -306,6 +306,9 @@ class JarvisController(QObject):
 
         # Execute Home Assistant actions (if any)
         for action in actions:
+            if not isinstance(action, dict):
+                logger.warning(f"Skipping invalid action (not a dict): {action}")
+                continue
             try:
                 domain = action.get("domain")
                 service = action.get("service")
