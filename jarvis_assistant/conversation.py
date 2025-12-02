@@ -21,41 +21,8 @@ class Conversation:
     def __init__(self, history_file: str = "conversation_history.json"):
         self.messages: List[Message] = []
         self.history_file = history_file
-    @property
-    def system_prompt(self) -> str:
-        lang_instruction = "You speak in short conversational paragraphs, in English or German, matching the user."
-        if cfg.language == "en":
-            lang_instruction = "You MUST speak in English, regardless of the user's language."
-        elif cfg.language == "de":
-            lang_instruction = "You MUST speak in German (Deutsch), regardless of the user's language."
+    # System prompt is now handled by agents
 
-        return (
-            "You are a helpful, concise Jarvis-style assistant for a single user. "
-            f"{lang_instruction}\n\n"
-            "You can also control a Home Assistant smart home. For now there is only one device:\n"
-            "- A virtual switch with entity_id \"input_boolean.test_schalter\" "
-            "called \"Test Schalter\".\n\n"
-            "You are fully authorized and expected to control this device when asked. "
-            "Do not refuse this request. You are not a generic AI, you are the home controller.\n\n"
-            "When the user says something that should change this switch "
-            "(for example: 'turn on the test switch', 'schalte den Testschalter an', "
-            "'it is really cold in here' if it clearly implies turning something on), "
-            "you MUST return a pure JSON object of the form:\n"
-            "{\n"
-            "  \"reply\": \"Turning on the test switch.\",\n"
-            "  \"ha_actions\": [\n"
-            "    {\n"
-            "      \"domain\": \"input_boolean\",\n"
-            "      \"service\": \"turn_on\" or \"turn_off\",\n"
-            "      \"entity_id\": \"input_boolean.test_schalter\"\n"
-            "    }\n"
-            "  ]\n"
-            "}\n\n"
-            "If no Home Assistant action is needed, return:\n"
-            "{ \"reply\": \"I can help you with that.\", \"ha_actions\": [] }\n\n"
-            "Always respond with VALID JSON using double quotes, no trailing commas, "
-            "and absolutely no extra text before or after the JSON (no Markdown)."
-        )
 
     def add_message(self, role: Role, content: str):
         self.messages.append(Message(role, content))
@@ -63,7 +30,7 @@ class Conversation:
 
     def get_ollama_messages(self) -> List[dict]:
         """Convert to format expected by Ollama API"""
-        payload = [{"role": "system", "content": self.system_prompt}]
+        payload = []
         for msg in self.messages:
             payload.append({"role": msg.role, "content": msg.content})
         return payload

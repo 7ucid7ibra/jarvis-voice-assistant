@@ -152,6 +152,9 @@ class JarvisApp:
     # Signal definitions need to be at class level, but we are inside methods.
     # So we need to restructure slightly to use signals for cross-thread communication.
 
+from .agents import IntentAgent, ActionAgent, ResponseAgent
+from .wake_word import WakeWordWorker
+
 class JarvisController(QObject):
     # Signals to drive workers
     request_stt = pyqtSignal(object)
@@ -165,37 +168,37 @@ class JarvisController(QObject):
         self.conversation = Conversation()
         self.ha_client = HomeAssistantClient()
         
+        # State machine for multi-agent
+        self.current_state = "idle"
+        self.current_user_text = ""
+        self.current_intent = None
+        self.current_action_taken = None
+        
         # Components
-        self.recorder = AudioRecorder()
-        self.stt = STTWorker()
-        self.wake_word_stt = STTWorker()  # Separate STT for wake word detection
-        self.llm = LLMWorker()
-        self.tts = TTSWorker()
+        self.audio_recorder = AudioRecorder()
+        self.stt_worker = STTWorker()
+        self.llm_worker = LLMWorker()
+        self.tts_worker = TTSWorker()
+        self.wake_word_worker = WakeWordWorker()
         
         # Threads
         self.stt_thread = QThread()
-        self.wake_word_stt_thread = QThread()
         self.llm_thread = QThread()
         self.tts_thread = QThread()
+        self.wake_word_thread = QThread()
         
         # Move workers
-        self.stt.moveToThread(self.stt_thread)
-        self.wake_word_stt.moveToThread(self.wake_word_stt_thread)
-        self.llm.moveToThread(self.llm_thread)
-        self.tts.moveToThread(self.tts_thread)
+        self.stt_worker.moveToThread(self.stt_thread)
+        self.llm_worker.moveToThread(self.llm_thread)
+        self.tts_worker.moveToThread(self.tts_thread)
+        self.wake_word_worker.moveToThread(self.wake_word_thread)
         
         # Connect Driver Signals to Worker Slots
-        self.request_stt.connect(self.stt.transcribe)
-        self.request_llm.connect(self.llm.generate_reply)
-        self.request_tts.connect(self.tts.speak)
+        self.request_stt.connect(self.stt_worker.transcribe)
+        self.request_llm.connect(self.llm_worker.generate_reply) # This will be removed later
+        self.request_tts.connect(self.tts_worker.speak)
         
         # Connect Worker Signals to Controller Slots
-        self.recorder.finished.connect(self.handle_recording_finished)
-        self.recorder.wake_word_chunk.connect(self.wake_word_stt.transcribe)
-        
-        self.stt.finished.connect(self.handle_stt_finished)
-        self.stt.error.connect(self.handle_error)
-        
         self.wake_word_stt.finished.connect(self.handle_wake_word_detected)
         
         self.llm.finished.connect(self.handle_llm_finished)
@@ -274,60 +277,129 @@ class JarvisController(QObject):
             # Restart wake word listening if enabled
             from .config import cfg
             if cfg.wake_word_enabled:
-                self.recorder.start_wake_word_listening()
-                self.window.set_status(f"Listening for '{cfg.wake_word}'...")
+        self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+        self.window.set_status("Idle")
+        # Restart wake word listening if enabled
+        from .config import cfg
+        if cfg.wake_word_enabled:
+            self.recorder.start_wake_word_listening()
+            self.window.set_status(f"Listening for '{cfg.wake_word}'...")
             return
             
         self.conversation.add_message("user", text)
         self.window.add_message(text, is_user=True)
         
         self.window.set_status("Thinking...")
-        self.request_llm.emit(self.conversation.get_ollama_messages())
+        # Start Multi-Agent Process
+        self.start_processing(text)
 
     def handle_llm_finished(self, text: str):
-        logger.info(f"LLM raw output: {text}")
+        # This is now the entry point for the multi-agent chain
+        # Step 1: Intent Classification
+        # We need to handle the async nature. Since LLMWorker emits 'finished',
+        # we'll need to chain the calls.
+        # But wait, LLMWorker is designed for single-shot.
+        # We need to refactor how we call it.
+        pass
 
-        reply_text = text
-        actions: list[dict[str, Any]] = []
-
-        # Try to parse JSON according to the protocol in Conversation.system_prompt
-        try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                reply_text = str(data.get("reply", "")).strip() or text
-                actions = data.get("ha_actions") or []
-        except Exception as e:
-            logger.warning(f"Failed to parse LLM JSON, using raw reply. Error: {e}")
-
-        # Save + display assistant reply
-        logger.info(f"Assistant: {reply_text}")
-        self.conversation.add_message("assistant", reply_text)
-        self.window.add_message(reply_text, is_user=False)
-
-        # Execute Home Assistant actions (if any)
-        for action in actions:
-            if not isinstance(action, dict):
-                logger.warning(f"Skipping invalid action (not a dict): {action}")
-                continue
-            try:
-                domain = action.get("domain")
-                service = action.get("service")
-                entity_id = action.get("entity_id")
-
-                if domain and service and entity_id:
-                    logger.info(f"Calling HA service {domain}.{service} on {entity_id}")
-                    self.ha_client.call_service(domain, service, {"entity_id": entity_id})
-                else:
-                    # Optional: support a simpler custom format e.g. {"name": "test_switch", "on": true}
-                    name = action.get("name")
-                    if name == "test_switch":
-                        self.ha_client.set_test_switch(bool(action.get("on", True)))
-            except Exception as e:
-                logger.error(f"Error calling Home Assistant: {e}")
-                self.window.add_message(f"Home Assistant error: {e}", is_user=False)
+    def start_processing(self, user_text: str):
+        self.window.set_status("Thinking (Intent)...")
         
-        self.window.set_status("Speaking...")
-        self.request_tts.emit(reply_text)
+        # Get history
+        history = self.conversation.get_ollama_messages()[-5:] # Last 5 messages
+        
+        # 1. Intent Agent
+        intent_agent = IntentAgent()
+        messages = [{"role": "system", "content": intent_agent.get_system_prompt()}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_text})
+        
+        # We need a way to handle the callback for THIS specific request
+        # Since LLMWorker uses a single signal, we might need a request ID or 
+        # instantiate a worker per request, or use a state machine.
+        # For simplicity, let's use a state machine in the controller.
+        
+        self.current_state = "intent"
+        self.current_user_text = user_text
+        self.llm_worker.generate(messages, format="json")
+
+    def handle_llm_response(self, response: str):
+        logger.info(f"LLM Response ({self.current_state}): {response}")
+        
+        if self.current_state == "intent":
+            try:
+                data = json.loads(response)
+                self.current_intent = data
+                
+                if data.get("intent") == "home_control":
+                    # 2. Action Agent
+                    self.window.set_status("Thinking (Action)...")
+                    self.current_state = "action"
+                    
+                    action_agent = ActionAgent()
+                    messages = [{"role": "system", "content": action_agent.get_system_prompt()}]
+                    messages.append({"role": "user", "content": f"Intent: {json.dumps(data)}. User: {self.current_user_text}"})
+                    
+                    self.llm_worker.generate(messages, format="json")
+                else:
+                    # Skip to Response Agent
+                    self.current_action_taken = None
+                    self.start_response_agent()
+                    
+            except Exception as e:
+                logger.error(f"Intent parsing failed: {e}")
+                # Fallback to conversation
+                self.current_intent = {"intent": "conversation"}
+                self.current_action_taken = None
+                self.start_response_agent()
+
+        elif self.current_state == "action":
+            try:
+                action = json.loads(response)
+                # Execute Action
+                if action and action.get("service"):
+                    self.window.set_status("Executing...")
+                    try:
+                        self.ha_client.call_service(action["domain"], action["service"], {"entity_id": action["entity_id"]})
+                        self.current_action_taken = action
+                    except Exception as e:
+                        logger.error(f"HA Call failed: {e}")
+                        self.current_action_taken = {"error": str(e)}
+                else:
+                    self.current_action_taken = None
+            except Exception as e:
+                logger.error(f"Action parsing failed: {e}")
+                self.current_action_taken = None
+            
+            self.start_response_agent()
+
+        elif self.current_state == "response":
+            # Final response
+            reply = response.strip()
+            logger.info(f"Assistant: {reply}")
+            self.conversation.add_message("assistant", reply)
+            self.window.add_message(reply, is_user=False)
+            self.window.set_status("Speaking...")
+            self.request_tts.emit(reply)
+            self.current_state = "idle"
+
+    def start_response_agent(self):
+        self.window.set_status("Thinking (Reply)...")
+        self.current_state = "response"
+        
+        response_agent = ResponseAgent()
+        messages = [{"role": "system", "content": response_agent.get_system_prompt()}]
+        
+        # Context for response
+        context = f"User said: {self.current_user_text}\n"
+        if self.current_intent:
+            context += f"Intent: {self.current_intent.get('intent')}\n"
+        if self.current_action_taken:
+            context += f"Action taken: {json.dumps(self.current_action_taken)}\n"
+        
+        messages.append({"role": "user", "content": context})
+        
+        self.llm_worker.generate(messages, format="text")
 
     def handle_tts_started(self):
         self.window.mic_btn.set_state(MicButton.STATE_SPEAKING)
