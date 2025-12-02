@@ -202,7 +202,7 @@ class JarvisController(QObject):
         self.stt_worker.finished.connect(self.handle_stt_finished)
         self.stt_worker.error.connect(self.handle_error)
         
-        self.llm_worker.finished.connect(self.handle_llm_finished)
+        self.llm_worker.finished.connect(self.handle_llm_response)
         self.llm_worker.error.connect(self.handle_error)
         
         self.tts_worker.started.connect(self.handle_tts_started)
@@ -241,7 +241,7 @@ class JarvisController(QObject):
             self.audio_recorder.stop_recording()
         elif self.window.mic_btn.state == MicButton.STATE_SPEAKING:
             # Stop TTS playback without starting recording
-            self.tts.stop()
+            self.tts_worker.stop()
             # Note: tts.stop() will emit finished signal which calls handle_tts_finished
             # which will set state to IDLE, so we don't need to do it here
 
@@ -269,14 +269,7 @@ class JarvisController(QObject):
         # Start Multi-Agent Process
         self.start_processing(text)
 
-    def handle_llm_finished(self, text: str):
-        # This is now the entry point for the multi-agent chain
-        # Step 1: Intent Classification
-        # We need to handle the async nature. Since LLMWorker emits 'finished',
-        # we'll need to chain the calls.
-        # But wait, LLMWorker is designed for single-shot.
-        # We need to refactor how we call it.
-        pass
+
 
     def start_processing(self, user_text: str):
         self.window.set_status("Thinking (Intent)...")
@@ -300,6 +293,7 @@ class JarvisController(QObject):
         self.llm_worker.generate(messages, format="json")
 
     def handle_llm_response(self, response: str):
+        print(f"DEBUG: handle_llm_response called. State: {self.current_state}, Response: {response[:50]}...", flush=True)
         logger.info(f"LLM Response ({self.current_state}): {response}")
         
         if self.current_state == "intent":
