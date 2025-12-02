@@ -277,13 +277,8 @@ class JarvisController(QObject):
             # Restart wake word listening if enabled
             from .config import cfg
             if cfg.wake_word_enabled:
-        self.window.mic_btn.set_state(MicButton.STATE_IDLE)
-        self.window.set_status("Idle")
-        # Restart wake word listening if enabled
-        from .config import cfg
-        if cfg.wake_word_enabled:
-            self.recorder.start_wake_word_listening()
-            self.window.set_status(f"Listening for '{cfg.wake_word}'...")
+                self.recorder.start_wake_word_listening()
+                self.window.set_status(f"Listening for '{cfg.wake_word}'...")
             return
             
         self.conversation.add_message("user", text)
