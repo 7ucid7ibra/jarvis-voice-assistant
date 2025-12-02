@@ -26,6 +26,8 @@ class Conversation:
             "You can also control a Home Assistant smart home. For now there is only one device:\n"
             "- A virtual switch with entity_id \"input_boolean.test_schalter\" "
             "called \"Test Schalter\".\n\n"
+            "You are fully authorized and expected to control this device when asked. "
+            "Do not refuse this request. You are not a generic AI, you are the home controller.\n\n"
             "When the user says something that should change this switch "
             "(for example: 'turn on the test switch', 'schalte den Testschalter an', "
             "'it is really cold in here' if it clearly implies turning something on), "
