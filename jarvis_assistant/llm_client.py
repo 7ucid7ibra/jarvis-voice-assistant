@@ -15,7 +15,8 @@ class LLMWorker(QObject):
             payload = {
                 "model": cfg.ollama_model,
                 "messages": messages,
-                "stream": False
+                "stream": False,
+                "format": "json",  # ask for structured JSON
             }
             response = requests.post(cfg.ollama_api_url, json=payload)
             response.raise_for_status()
