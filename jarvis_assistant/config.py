@@ -11,6 +11,7 @@ DEFAULT_WAKE_WORD_ENABLED = False
 DEFAULT_WAKE_WORD = "jarvis"
 DEFAULT_HA_URL = "http://192.168.188.126:8123"
 DEFAULT_HA_TOKEN = ""  # normally provided via env var
+DEFAULT_LANGUAGE = None  # None = auto, "en" = English, "de" = German
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -105,6 +106,14 @@ class Config:
     @ha_token.setter
     def ha_token(self, value: str) -> None:
         self._settings["ha_token"] = value
+
+    @property
+    def language(self) -> str | None:
+        return self._settings.get("language", DEFAULT_LANGUAGE)
+
+    @language.setter
+    def language(self, value: str | None) -> None:
+        self._settings["language"] = value
     
     def save(self):
         try:
