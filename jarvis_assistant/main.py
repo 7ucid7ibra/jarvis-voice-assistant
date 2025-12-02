@@ -9,7 +9,10 @@ from .audio_io import AudioRecorder
 from .stt import STTWorker
 from .llm_client import LLMWorker
 from .tts import TTSWorker
+from .ha_client import HomeAssistantClient
 from .utils import logger
+import json
+from typing import Any
 
 class JarvisApp:
     def __init__(self):
@@ -160,6 +163,7 @@ class JarvisController(QObject):
         self.app = QApplication(sys.argv)
         self.window = MainWindow()
         self.conversation = Conversation()
+        self.ha_client = HomeAssistantClient()
         
         # Components
         self.recorder = AudioRecorder()
@@ -280,12 +284,47 @@ class JarvisController(QObject):
         self.window.set_status("Thinking...")
         self.request_llm.emit(self.conversation.get_ollama_messages())
 
-    def handle_llm_finished(self, text):
-        self.conversation.add_message("assistant", text)
-        self.window.add_message(text, is_user=False)
+    def handle_llm_finished(self, text: str):
+        logger.info(f"LLM raw output: {text}")
+
+        reply_text = text
+        actions: list[dict[str, Any]] = []
+
+        # Try to parse JSON according to the protocol in Conversation.system_prompt
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                reply_text = str(data.get("reply", "")).strip() or text
+                actions = data.get("ha_actions") or []
+        except Exception as e:
+            logger.warning(f"Failed to parse LLM JSON, using raw reply. Error: {e}")
+
+        # Save + display assistant reply
+        logger.info(f"Assistant: {reply_text}")
+        self.conversation.add_message("assistant", reply_text)
+        self.window.add_message(reply_text, is_user=False)
+
+        # Execute Home Assistant actions (if any)
+        for action in actions:
+            try:
+                domain = action.get("domain")
+                service = action.get("service")
+                entity_id = action.get("entity_id")
+
+                if domain and service and entity_id:
+                    logger.info(f"Calling HA service {domain}.{service} on {entity_id}")
+                    self.ha_client.call_service(domain, service, {"entity_id": entity_id})
+                else:
+                    # Optional: support a simpler custom format e.g. {"name": "test_switch", "on": true}
+                    name = action.get("name")
+                    if name == "test_switch":
+                        self.ha_client.set_test_switch(bool(action.get("on", True)))
+            except Exception as e:
+                logger.error(f"Error calling Home Assistant: {e}")
+                self.window.add_message(f"Home Assistant error: {e}", is_user=False)
         
         self.window.set_status("Speaking...")
-        self.request_tts.emit(text)
+        self.request_tts.emit(reply_text)
 
     def handle_tts_started(self):
         self.window.mic_btn.set_state(MicButton.STATE_SPEAKING)
