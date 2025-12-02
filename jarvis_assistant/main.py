@@ -198,7 +198,7 @@ class JarvisController(QObject):
         self.request_tts.connect(self.tts_worker.speak)
         
         # Connect Worker Signals to Controller Slots
-        self.audio_recorder.audio_ready.connect(self.stt_worker.transcribe)
+        self.audio_recorder.finished.connect(self.stt_worker.transcribe)
         self.stt_worker.finished.connect(self.handle_stt_finished)
         self.stt_worker.error.connect(self.handle_error)
         
