@@ -3,6 +3,7 @@ from typing import List, Literal
 import time
 import json
 import os
+from .config import cfg
 
 Role = Literal["user", "assistant", "system"]
 
@@ -20,9 +21,17 @@ class Conversation:
     def __init__(self, history_file: str = "conversation_history.json"):
         self.messages: List[Message] = []
         self.history_file = history_file
-        self.system_prompt = (
+    @property
+    def system_prompt(self) -> str:
+        lang_instruction = "You speak in short conversational paragraphs, in English or German, matching the user."
+        if cfg.language == "en":
+            lang_instruction = "You MUST speak in English, regardless of the user's language."
+        elif cfg.language == "de":
+            lang_instruction = "You MUST speak in German (Deutsch), regardless of the user's language."
+
+        return (
             "You are a helpful, concise Jarvis-style assistant for a single user. "
-            "You speak in short conversational paragraphs, in English or German, matching the user.\n\n"
+            f"{lang_instruction}\n\n"
             "You can also control a Home Assistant smart home. For now there is only one device:\n"
             "- A virtual switch with entity_id \"input_boolean.test_schalter\" "
             "called \"Test Schalter\".\n\n"
@@ -33,7 +42,7 @@ class Conversation:
             "'it is really cold in here' if it clearly implies turning something on), "
             "you MUST return a pure JSON object of the form:\n"
             "{\n"
-            "  \"reply\": \"What you will say back to the user\",\n"
+            "  \"reply\": \"Turning on the test switch.\",\n"
             "  \"ha_actions\": [\n"
             "    {\n"
             "      \"domain\": \"input_boolean\",\n"
@@ -43,7 +52,7 @@ class Conversation:
             "  ]\n"
             "}\n\n"
             "If no Home Assistant action is needed, return:\n"
-            "{ \"reply\": \"...normal answer...\", \"ha_actions\": [] }\n\n"
+            "{ \"reply\": \"I can help you with that.\", \"ha_actions\": [] }\n\n"
             "Always respond with VALID JSON using double quotes, no trailing commas, "
             "and absolutely no extra text before or after the JSON (no Markdown)."
         )
