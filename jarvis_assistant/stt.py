@@ -36,7 +36,7 @@ class STTWorker(QObject):
             if len(audio_data.shape) > 1:
                 audio_data = audio_data.flatten()
             
-            result = self.model.transcribe(audio_data, fp16=False) # fp16=False for CPU
+            result = self.model.transcribe(audio_data, fp16=False, language=cfg.language) # fp16=False for CPU
             text = result['text'].strip()
             self.finished.emit(text)
         except Exception as e:
