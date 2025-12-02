@@ -9,6 +9,8 @@ DEFAULT_TTS_RATE = 190
 DEFAULT_TTS_VOLUME = 1.0
 DEFAULT_WAKE_WORD_ENABLED = False
 DEFAULT_WAKE_WORD = "jarvis"
+DEFAULT_HA_URL = "http://192.168.188.126:8123"
+DEFAULT_HA_TOKEN = ""  # normally provided via env var
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -85,6 +87,24 @@ class Config:
     @wake_word.setter
     def wake_word(self, value):
         self._settings['wake_word'] = value.lower().strip()
+
+    @property
+    def ha_url(self) -> str:
+        # Prefer value from settings.json, otherwise env var, otherwise default
+        return self._settings.get("ha_url", os.environ.get("HA_URL", DEFAULT_HA_URL))
+
+    @ha_url.setter
+    def ha_url(self, value: str) -> None:
+        self._settings["ha_url"] = value
+
+    @property
+    def ha_token(self) -> str:
+        # Prefer env var for security, but allow override via settings.json if explicitly set
+        return self._settings.get("ha_token", os.environ.get("HA_TOKEN", DEFAULT_HA_TOKEN))
+
+    @ha_token.setter
+    def ha_token(self, value: str) -> None:
+        self._settings["ha_token"] = value
     
     def save(self):
         try:
