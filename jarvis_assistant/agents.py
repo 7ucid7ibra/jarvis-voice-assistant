@@ -81,7 +81,9 @@ class ResponseAgent(BaseAgent):
             f"{lang_instruction}\n\n"
             "Context:\n"
             "- You will be provided with the User's message and the Action that was just taken (if any).\n"
-            "- If an action was taken (e.g., switch turned on), confirm it naturally.\n"
+            "- IMPORTANT: The action listed has ALREADY BEEN EXECUTED successfully. Do NOT ask for confirmation.\n"
+            "- Do NOT describe the user's request (e.g., do not say 'The user requested...').\n"
+            "- Simply confirm the action was done (e.g., 'I have turned on the light').\n"
             "- If no action was taken, answer the user's question or chat naturally.\n"
             "- Be concise. Do not output JSON. Output only the text response."
         )
