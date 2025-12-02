@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+# Ensure we're running from the project root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+cd "$PROJECT_ROOT"
+
 # Configuration
 OLLAMA_MODEL="qwen2.5:0.5b"
 
