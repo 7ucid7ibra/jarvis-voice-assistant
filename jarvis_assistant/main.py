@@ -153,7 +153,10 @@ class JarvisApp:
     # So we need to restructure slightly to use signals for cross-thread communication.
 
 from .agents import IntentAgent, ActionAgent, ResponseAgent
-from .wake_word import WakeWordWorker
+# from .wake_word import WakeWordWorker # This module doesn't exist yet or was named differently in previous context.
+# Checking previous context, WakeWordWorker was likely part of recorder or stt, or I hallucinated the file.
+# Let's check where WakeWordWorker is defined.
+
 
 class JarvisController(QObject):
     # Signals to drive workers
@@ -179,23 +182,23 @@ class JarvisController(QObject):
         self.stt_worker = STTWorker()
         self.llm_worker = LLMWorker()
         self.tts_worker = TTSWorker()
-        self.wake_word_worker = WakeWordWorker()
+        # self.wake_word_worker = WakeWordWorker() # Removed
         
         # Threads
         self.stt_thread = QThread()
         self.llm_thread = QThread()
         self.tts_thread = QThread()
-        self.wake_word_thread = QThread()
+        # self.wake_word_thread = QThread() # Removed
         
         # Move workers
         self.stt_worker.moveToThread(self.stt_thread)
         self.llm_worker.moveToThread(self.llm_thread)
         self.tts_worker.moveToThread(self.tts_thread)
-        self.wake_word_worker.moveToThread(self.wake_word_thread)
+        # self.wake_word_worker.moveToThread(self.wake_word_thread) # Removed
         
         # Connect Driver Signals to Worker Slots
         self.request_stt.connect(self.stt_worker.transcribe)
-        self.request_llm.connect(self.llm_worker.generate_reply) # This will be removed later
+        # self.request_llm.connect(self.llm_worker.generate_reply) # Removed: generate_reply no longer exists
         self.request_tts.connect(self.tts_worker.speak)
         
         # Connect Worker Signals to Controller Slots
@@ -274,11 +277,7 @@ class JarvisController(QObject):
         if not text:
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
-            # Restart wake word listening if enabled
-            from .config import cfg
-            if cfg.wake_word_enabled:
-                self.recorder.start_wake_word_listening()
-                self.window.set_status(f"Listening for '{cfg.wake_word}'...")
+            
             return
             
         self.conversation.add_message("user", text)
