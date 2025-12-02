@@ -145,6 +145,17 @@ class SettingsDialog(QDialog):
         self.whisper_combo.addItems(["tiny", "base", "small", "medium", "large"])
         self.whisper_combo.setCurrentText(cfg.whisper_model)
         
+        # Language Settings
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["Auto", "English", "German"])
+        current_lang = cfg.language
+        if current_lang == "en":
+            self.language_combo.setCurrentText("English")
+        elif current_lang == "de":
+            self.language_combo.setCurrentText("German")
+        else:
+            self.language_combo.setCurrentText("Auto")
+
         self.rate_slider = QSlider(Qt.Orientation.Horizontal)
         self.rate_slider.setRange(100, 300)
         self.rate_slider.setValue(cfg.tts_rate)
@@ -166,10 +177,18 @@ class SettingsDialog(QDialog):
         wake_word_layout.addWidget(self.wake_word_checkbox)
         wake_word_layout.addWidget(self.wake_word_edit)
         
+        # Home Assistant Settings
+        self.ha_url_edit = QLineEdit(cfg.ha_url)
+        self.ha_token_edit = QLineEdit(cfg.ha_token)
+        self.ha_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        
         layout.addRow("Ollama Model:", self.model_edit)
         layout.addRow("Whisper Model:", self.whisper_combo)
+        layout.addRow("Language:", self.language_combo)
         layout.addRow("TTS Rate:", self.rate_slider)
         layout.addRow("Wake Word:", wake_word_layout)
+        layout.addRow("HA URL:", self.ha_url_edit)
+        layout.addRow("HA Token:", self.ha_token_edit)
         
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save_settings)
@@ -181,9 +200,22 @@ class SettingsDialog(QDialog):
     def save_settings(self):
         cfg.ollama_model = self.model_edit.text()
         cfg.whisper_model = self.whisper_combo.currentText()
+        
+        lang_text = self.language_combo.currentText()
+        if lang_text == "English":
+            cfg.language = "en"
+        elif lang_text == "German":
+            cfg.language = "de"
+        else:
+            cfg.language = None
+            
         cfg.tts_rate = self.rate_slider.value()
         cfg.wake_word_enabled = self.wake_word_checkbox.isChecked()
         cfg.wake_word = self.wake_word_edit.text()
+        
+        cfg.ha_url = self.ha_url_edit.text()
+        cfg.ha_token = self.ha_token_edit.text()
+        
         cfg.save()
         self.accept()
 
