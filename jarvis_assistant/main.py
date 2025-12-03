@@ -170,6 +170,8 @@ class JarvisController(QObject):
         self.window = MainWindow()
         self.conversation = Conversation()
         self.ha_client = HomeAssistantClient()
+        self.ha_entities = self.ha_client.get_relevant_entities()
+        logger.info(f"Loaded HA Entities:\n{self.ha_entities}")
         
 
         
@@ -279,7 +281,7 @@ class JarvisController(QObject):
         
         # 1. Intent Agent
         intent_agent = IntentAgent()
-        messages = [{"role": "system", "content": intent_agent.get_system_prompt()}]
+        messages = [{"role": "system", "content": intent_agent.get_system_prompt(self.ha_entities)}]
         messages.extend(history)
         messages.append({"role": "user", "content": user_text})
         
@@ -307,7 +309,7 @@ class JarvisController(QObject):
                     self.current_state = "action"
                     
                     action_agent = ActionAgent()
-                    messages = [{"role": "system", "content": action_agent.get_system_prompt()}]
+                    messages = [{"role": "system", "content": action_agent.get_system_prompt(self.ha_entities)}]
                     messages.append({"role": "user", "content": f"Intent: {json.dumps(data)}. User: {self.current_user_text}"})
                     
                     self.llm_worker.generate(messages, format="json")

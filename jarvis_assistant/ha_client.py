@@ -30,5 +30,42 @@ class HomeAssistantClient:
         return self.call_service(
             domain,
             service,
-            {"entity_id": "input_boolean.test_schalter"},
+            {"entity_id": "input_boolean.switch"},
         )
+
+    def get_states(self) -> list:
+        url = f"{self.base_url}/api/states"
+        resp = requests.get(url, headers=self._headers(), timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_relevant_entities(self) -> str:
+        """
+        Fetches all states and returns a formatted string of relevant entities
+        (lights, switches, sensors) for the LLM prompt.
+        """
+        try:
+            states = self.get_states()
+        except Exception as e:
+            return f"Error fetching entities: {e}"
+
+        relevant_domains = [
+            "light", "switch", "sensor", "binary_sensor", 
+            "cover", "climate", "input_boolean"
+        ]
+        
+        lines = []
+        for state in states:
+            entity_id = state.get("entity_id", "")
+            domain = entity_id.split(".")[0]
+            
+            if domain in relevant_domains:
+                friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+                state_val = state.get("state", "unknown")
+                lines.append(f"- Name: '{friendly_name}', Entity: '{entity_id}', State: '{state_val}'")
+                
+        if not lines:
+            return "No relevant devices found."
+            
+        return "\n".join(lines)
+

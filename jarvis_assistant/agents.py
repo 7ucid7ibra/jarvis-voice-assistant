@@ -20,7 +20,7 @@ class IntentAgent(BaseAgent):
     """
     Determines the user's intent and resolves context (e.g., "it" -> "switch").
     """
-    def get_system_prompt(self) -> str:
+    def get_system_prompt(self, entities_context: str = "") -> str:
         return (
             "You are an Intent Classifier. Your job is to analyze the user's latest message "
             "in the context of the conversation history and determine their intent.\n\n"
@@ -29,7 +29,7 @@ class IntentAgent(BaseAgent):
             "- 'conversation': User is just chatting, asking questions, or greeting.\n\n"
             "Context Resolution:\n"
             "- You MUST resolve pronouns like 'it', 'that', 'the switch' to specific targets based on history.\n"
-            "- Available devices: 'test_switch' (input_boolean.test_schalter), 'shower' (input_boolean.shower).\n\n"
+            f"- Available devices:\n{entities_context}\n\n"
             "Output Format:\n"
             "You must return a single JSON object:\n"
             "{\n"
@@ -39,8 +39,8 @@ class IntentAgent(BaseAgent):
             "  \"confidence\": 0.0 to 1.0\n"
             "}\n\n"
             "Examples:\n"
-            "User: 'Turn on the test switch' -> {\"intent\": \"home_control\", \"target\": \"test_switch\", \"action\": \"turn_on\"}\n"
-            "User: 'Turn it off' (after switch context) -> {\"intent\": \"home_control\", \"target\": \"test_switch\", \"action\": \"turn_off\"}\n"
+            "User: 'Turn on the switch' -> {\"intent\": \"home_control\", \"target\": \"switch\", \"action\": \"turn_on\"}\n"
+            "User: 'Turn it off' (after switch context) -> {\"intent\": \"home_control\", \"target\": \"switch\", \"action\": \"turn_off\"}\n"
             "User: 'Hello' -> {\"intent\": \"conversation\", \"target\": null, \"action\": null}"
         )
 
@@ -48,19 +48,18 @@ class ActionAgent(BaseAgent):
     """
     Generates the specific Home Assistant service call.
     """
-    def get_system_prompt(self) -> str:
+    def get_system_prompt(self, entities_context: str = "") -> str:
         return (
             "You are a Home Assistant Action Generator. Your job is to convert a resolved intent "
             "into a specific Home Assistant service call JSON.\n\n"
             "Available Devices:\n"
-            "- Name: 'Test Schalter', Entity: 'input_boolean.test_schalter', Domain: 'input_boolean'\n"
-            "- Name: 'Shower', Entity: 'input_boolean.shower', Domain: 'input_boolean'\n\n"
+            f"{entities_context}\n\n"
             "Output Format:\n"
             "Return a JSON object representing the service call:\n"
             "{\n"
             "  \"domain\": \"input_boolean\",\n"
             "  \"service\": \"turn_on\" or \"turn_off\",\n"
-            "  \"entity_id\": \"input_boolean.test_schalter\"\n"
+            "  \"entity_id\": \"input_boolean.switch\"\n"
             "}\n\n"
             "If the action is unclear or impossible, return empty JSON: {}"
         )
