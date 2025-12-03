@@ -310,38 +310,41 @@ class JarvisController(QObject):
                 data = json.loads(response)
                 self.current_intent = data
                 
-                # Handle Memory Intent
-                if data.get("intent") == "memory" or (data.get("action") == "remember"):
-                    # Extract fact from user text if not provided in data (IntentAgent doesn't extract fact yet, just intent)
-                    # For now, we assume the whole user text contains the fact.
-                    # We could improve IntentAgent to extract the "fact" field, but for now:
+                # Handle Memory Write Intent
+                if data.get("intent") == "memory_write" or (data.get("action") == "remember"):
+                    # Extract fact logic (same as before but cleaner)
                     fact = self.current_user_text
-                    # Remove "remember that" prefix if present for cleaner storage
                     lower_text = fact.lower()
                     if "remember that" in lower_text:
-                         # Find index and slice
                          idx = lower_text.find("remember that") + len("remember that")
                          fact = fact[idx:].strip()
                     elif "remember" in lower_text:
                          idx = lower_text.find("remember") + len("remember")
                          fact = fact[idx:].strip()
+                    elif "my name is" in lower_text:
+                         # Special case for names if we want, or just rely on fallback
+                         pass
                     else:
-                        # If intent is memory but no keyword, use the whole text (e.g. "My name is Bobby")
                         fact = self.current_user_text.strip()
                     
-                    # Validate fact length to avoid saving garbage (e.g. ".")
                     if fact and len(fact) > 2:
                         self.memory_manager.add_fact(f"fact_{int(time.time())}", fact)
                         self.current_action_taken = {"action": "remember", "status": "success", "fact": fact}
                         self.start_response_agent()
                         return
                     else:
-                        # If fact is invalid, treat as conversation
                         logger.warning(f"Ignored invalid memory fact: '{fact}'")
                         self.current_intent = {"intent": "conversation"}
                         self.current_action_taken = None
                         self.start_response_agent()
                         return
+
+                # Handle Memory Read Intent
+                if data.get("intent") == "memory_read":
+                    # Just pass through to ResponseAgent, but mark action as 'recall' so it knows to look in memory
+                    self.current_action_taken = {"action": "recall", "status": "success"}
+                    self.start_response_agent()
+                    return
 
                 if data.get("intent") == "home_control":
                     # 2. Action Agent
@@ -370,13 +373,19 @@ class JarvisController(QObject):
                 action = json.loads(response)
                 # Execute Action
                 if action and action.get("service"):
-                    self.window.set_status("Executing...")
-                    try:
-                        self.ha_client.call_service(action["domain"], action["service"], {"entity_id": action["entity_id"]})
-                        self.current_action_taken = action
-                    except Exception as e:
-                        logger.error(f"HA Call failed: {e}")
-                        self.current_action_taken = {"error": str(e)}
+                    # Validate Service
+                    valid_services = ["turn_on", "turn_off", "toggle"]
+                    if action["service"] not in valid_services:
+                        logger.error(f"Invalid service requested: {action['service']}")
+                        self.current_action_taken = {"error": f"Service '{action['service']}' is not supported. I can only turn on, turn off, or toggle."}
+                    else:
+                        self.window.set_status("Executing...")
+                        try:
+                            self.ha_client.call_service(action["domain"], action["service"], {"entity_id": action["entity_id"]})
+                            self.current_action_taken = action
+                        except Exception as e:
+                            logger.error(f"HA Call failed: {e}")
+                            self.current_action_taken = {"error": str(e)}
                 else:
                     self.current_action_taken = None
             except Exception as e:
