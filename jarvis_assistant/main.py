@@ -10,8 +10,10 @@ from .stt import STTWorker
 from .llm_client import LLMWorker
 from .tts import TTSWorker
 from .ha_client import HomeAssistantClient
+from .memory import MemoryManager
 from .utils import logger
 import json
+import time
 from typing import Any
 
 class JarvisApp:
@@ -164,6 +166,10 @@ class JarvisController(QObject):
     request_llm = pyqtSignal(list)
     request_tts = pyqtSignal(str)
     
+    def open_settings(self):
+        dlg = SettingsDialog(self)
+        dlg.exec()
+    
     def __init__(self):
         super().__init__()
         self.app = QApplication(sys.argv)
@@ -180,6 +186,7 @@ class JarvisController(QObject):
         self.stt_worker = STTWorker()
         self.llm_worker = LLMWorker()
         self.tts_worker = TTSWorker()
+        self.memory_manager = MemoryManager()
         # self.wake_word_worker = WakeWordWorker() # Removed
         
         # Threads
@@ -303,6 +310,39 @@ class JarvisController(QObject):
                 data = json.loads(response)
                 self.current_intent = data
                 
+                # Handle Memory Intent
+                if data.get("intent") == "memory" or (data.get("action") == "remember"):
+                    # Extract fact from user text if not provided in data (IntentAgent doesn't extract fact yet, just intent)
+                    # For now, we assume the whole user text contains the fact.
+                    # We could improve IntentAgent to extract the "fact" field, but for now:
+                    fact = self.current_user_text
+                    # Remove "remember that" prefix if present for cleaner storage
+                    lower_text = fact.lower()
+                    if "remember that" in lower_text:
+                         # Find index and slice
+                         idx = lower_text.find("remember that") + len("remember that")
+                         fact = fact[idx:].strip()
+                    elif "remember" in lower_text:
+                         idx = lower_text.find("remember") + len("remember")
+                         fact = fact[idx:].strip()
+                    else:
+                        # If intent is memory but no keyword, use the whole text (e.g. "My name is Bobby")
+                        fact = self.current_user_text.strip()
+                    
+                    # Validate fact length to avoid saving garbage (e.g. ".")
+                    if fact and len(fact) > 2:
+                        self.memory_manager.add_fact(f"fact_{int(time.time())}", fact)
+                        self.current_action_taken = {"action": "remember", "status": "success", "fact": fact}
+                        self.start_response_agent()
+                        return
+                    else:
+                        # If fact is invalid, treat as conversation
+                        logger.warning(f"Ignored invalid memory fact: '{fact}'")
+                        self.current_intent = {"intent": "conversation"}
+                        self.current_action_taken = None
+                        self.start_response_agent()
+                        return
+
                 if data.get("intent") == "home_control":
                     # 2. Action Agent
                     self.window.set_status("Thinking (Action)...")
@@ -359,17 +399,34 @@ class JarvisController(QObject):
         self.window.set_status("Thinking (Reply)...")
         self.current_state = "response"
         
+        # Get memory context
+        memory_context = self.memory_manager.get_all_context()
+        
         response_agent = ResponseAgent()
-        messages = [{"role": "system", "content": response_agent.get_system_prompt()}]
+        messages = [{"role": "system", "content": response_agent.get_system_prompt(memory_context)}]
+        
+        # Add conversation history (last 10 messages)
+        history = self.conversation.get_ollama_messages()[-10:]
+        messages.extend(history)
         
         # Context for response
-        context = f"User said: {self.current_user_text}\n"
+        system_context = ""
         if self.current_intent:
-            context += f"Intent: {self.current_intent.get('intent')}\n"
-        if self.current_action_taken:
-            context += f"Action taken: {json.dumps(self.current_action_taken)}\n"
+            system_context += f"Intent: {self.current_intent.get('intent')}\n"
         
-        messages.append({"role": "user", "content": context})
+        # Only add action if it was actually attempted and has a result
+        if self.current_action_taken:
+            system_context += f"Action Result: {json.dumps(self.current_action_taken)}\n"
+        else:
+            system_context += "Action Result: None (No action was taken)\n"
+            
+        # Construct the final prompt with clear delimiters
+        final_prompt = (
+            f"System Context:\n{system_context}\n"
+            f"User Input:\n{self.current_user_text}"
+        )
+        
+        messages.append({"role": "user", "content": final_prompt})
         
         self.llm_worker.generate(messages, format="text")
 

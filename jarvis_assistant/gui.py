@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
     QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect, 
-    QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox
+    QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox,
+    QCheckBox, QProgressBar
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, 
@@ -137,15 +138,61 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setStyleSheet(f"background-color: {COLOR_BACKGROUND}; color: white;")
+        self.setMinimumWidth(500)
         
-        layout = QFormLayout()
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         
-        self.model_edit = QLineEdit(cfg.ollama_model)
+        # --- LLM Settings ---
+        from PyQt6.QtWidgets import QGroupBox
+        llm_group = QGroupBox("LLM Settings")
+        llm_group.setStyleSheet(f"QGroupBox {{ border: 1px solid #333; border-radius: 5px; margin-top: 10px; font-weight: bold; }} QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}")
+        llm_layout = QFormLayout()
+        llm_layout.setSpacing(10)
+        
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItems(["ollama", "openai", "gemini"])
+        self.provider_combo.setCurrentText(cfg.api_provider)
+        self.provider_combo.currentTextChanged.connect(self.update_ui_state)
+        
+        self.api_key_edit = QLineEdit(cfg.api_key)
+        self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key_edit.setPlaceholderText("sk-...")
+        
+        # Model Selection
+        self.model_edit = QComboBox()
+        self.model_edit.setEditable(True)
+        
+        # Populate with installed models
+        from .llm_client import LLMWorker
+        worker = LLMWorker()
+        installed_models = worker.list_models()
+        if installed_models:
+            self.model_edit.addItems(installed_models)
+        else:
+            # Fallback if no models found or error
+            self.model_edit.addItems(["qwen2.5:0.5b", "llama3.2:1b"])
+            
+        self.model_edit.setCurrentText(cfg.ollama_model)
+        self.model_edit.setSizePolicy(self.model_edit.sizePolicy().horizontalPolicy(), self.model_edit.sizePolicy().verticalPolicy())
+        
+        llm_layout.addRow("Provider:", self.provider_combo)
+        llm_layout.addRow("API Key:", self.api_key_edit)
+        llm_layout.addRow("Model:", self.model_edit)
+        llm_group.setLayout(llm_layout)
+        main_layout.addWidget(llm_group)
+        
+        # --- Speech Settings ---
+        speech_group = QGroupBox("Speech Settings")
+        speech_group.setStyleSheet(f"QGroupBox {{ border: 1px solid #333; border-radius: 5px; margin-top: 10px; font-weight: bold; }} QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}")
+        speech_layout = QFormLayout()
+        speech_layout.setSpacing(10)
+        
         self.whisper_combo = QComboBox()
         self.whisper_combo.addItems(["tiny", "base", "small", "medium", "large"])
         self.whisper_combo.setCurrentText(cfg.whisper_model)
         
-        # Language Settings
         self.language_combo = QComboBox()
         self.language_combo.addItems(["Auto", "English", "German"])
         current_lang = cfg.language
@@ -160,45 +207,60 @@ class SettingsDialog(QDialog):
         self.rate_slider.setRange(100, 300)
         self.rate_slider.setValue(cfg.tts_rate)
         
-        # Wake word settings
-        from PyQt6.QtWidgets import QCheckBox, QHBoxLayout
         self.wake_word_checkbox = QCheckBox("Enable Wake Word")
         self.wake_word_checkbox.setChecked(cfg.wake_word_enabled)
         self.wake_word_checkbox.setStyleSheet("color: white;")
         
         self.wake_word_edit = QLineEdit(cfg.wake_word)
-        self.wake_word_edit.setPlaceholderText("Enter wake word (e.g., jarvis)")
+        self.wake_word_edit.setPlaceholderText("Wake word (e.g., jarvis)")
         self.wake_word_edit.setEnabled(cfg.wake_word_enabled)
-        
-        # Connect checkbox to enable/disable text field
         self.wake_word_checkbox.toggled.connect(self.wake_word_edit.setEnabled)
         
-        wake_word_layout = QHBoxLayout()
-        wake_word_layout.addWidget(self.wake_word_checkbox)
-        wake_word_layout.addWidget(self.wake_word_edit)
+        wake_layout = QHBoxLayout()
+        wake_layout.addWidget(self.wake_word_checkbox)
+        wake_layout.addWidget(self.wake_word_edit)
         
-        # Home Assistant Settings
+        speech_layout.addRow("Whisper:", self.whisper_combo)
+        speech_layout.addRow("Language:", self.language_combo)
+        speech_layout.addRow("TTS Rate:", self.rate_slider)
+        speech_layout.addRow("Wake Word:", wake_layout)
+        speech_group.setLayout(speech_layout)
+        main_layout.addWidget(speech_group)
+        
+        # --- Home Assistant ---
+        ha_group = QGroupBox("Home Assistant")
+        ha_group.setStyleSheet(f"QGroupBox {{ border: 1px solid #333; border-radius: 5px; margin-top: 10px; font-weight: bold; }} QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}")
+        ha_layout = QFormLayout()
+        ha_layout.setSpacing(10)
+        
         self.ha_url_edit = QLineEdit(cfg.ha_url)
         self.ha_token_edit = QLineEdit(cfg.ha_token)
         self.ha_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
         
-        layout.addRow("Ollama Model:", self.model_edit)
-        layout.addRow("Whisper Model:", self.whisper_combo)
-        layout.addRow("Language:", self.language_combo)
-        layout.addRow("TTS Rate:", self.rate_slider)
-        layout.addRow("Wake Word:", wake_word_layout)
-        layout.addRow("HA URL:", self.ha_url_edit)
-        layout.addRow("HA Token:", self.ha_token_edit)
+        ha_layout.addRow("URL:", self.ha_url_edit)
+        ha_layout.addRow("Token:", self.ha_token_edit)
+        ha_group.setLayout(ha_layout)
+        main_layout.addWidget(ha_group)
         
+        # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save_settings)
         buttons.rejected.connect(self.reject)
-        layout.addRow(buttons)
+        main_layout.addWidget(buttons)
         
-        self.setLayout(layout)
+        self.setLayout(main_layout)
+        
+        self.update_ui_state(cfg.api_provider)
+
+    def update_ui_state(self, provider):
+        is_ollama = provider == "ollama"
+        self.model_edit.setEnabled(is_ollama)
+        self.api_key_edit.setEnabled(not is_ollama)
 
     def save_settings(self):
-        cfg.ollama_model = self.model_edit.text()
+        cfg.api_provider = self.provider_combo.currentText()
+        cfg.api_key = self.api_key_edit.text()
+        cfg.ollama_model = self.model_edit.currentText()
         cfg.whisper_model = self.whisper_combo.currentText()
         
         lang_text = self.language_combo.currentText()

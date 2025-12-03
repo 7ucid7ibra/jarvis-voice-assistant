@@ -12,6 +12,8 @@ DEFAULT_WAKE_WORD = "jarvis"
 DEFAULT_HA_URL = "http://192.168.188.126:8123"
 DEFAULT_HA_TOKEN = ""  # normally provided via env var
 DEFAULT_LANGUAGE = None  # None = auto, "en" = English, "de" = German
+DEFAULT_API_PROVIDER = "ollama"
+DEFAULT_API_KEY = ""
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -114,6 +116,22 @@ class Config:
     @language.setter
     def language(self, value: str | None) -> None:
         self._settings["language"] = value
+
+    @property
+    def api_provider(self) -> str:
+        return self._settings.get("api_provider", DEFAULT_API_PROVIDER)
+
+    @api_provider.setter
+    def api_provider(self, value: str) -> None:
+        self._settings["api_provider"] = value
+
+    @property
+    def api_key(self) -> str:
+        return self._settings.get("api_key", DEFAULT_API_KEY)
+
+    @api_key.setter
+    def api_key(self, value: str) -> None:
+        self._settings["api_key"] = value
     
     def save(self):
         try:
