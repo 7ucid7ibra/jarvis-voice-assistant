@@ -1,6 +1,9 @@
 import requests
 import json
 import threading # Added for the new generate method
+import subprocess
+from pathlib import Path
+from typing import List, Dict, Any
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 from .config import cfg
 
@@ -21,15 +24,138 @@ class LLMWorker(QObject):
         """
         Lists installed models.
         """
+        return [m["name"] for m in self.list_models_detailed()]
+
+    def list_models_detailed(self) -> List[Dict[str, Any]]:
+        """
+        Returns installed models with metadata (name, size, params, quantization).
+        """
         try:
             url = "http://127.0.0.1:11434/api/tags"
             resp = requests.get(url, timeout=5)
-            if resp.status_code == 200:
-                models = [m["name"] for m in resp.json().get("models", [])]
-                return models
-        except:
-            pass
-        return []
+            resp.raise_for_status()
+            models = []
+            for m in resp.json().get("models", []):
+                name = m.get("name", "")
+                details = m.get("details", {}) or {}
+                size_bytes = m.get("size", 0) or 0
+                models.append(
+                    {
+                        "name": name,
+                        "size": self._format_size(size_bytes),
+                        "raw_size": size_bytes,
+                        "parameter_size": details.get("parameter_size"),
+                        "quantization": details.get("quantization"),
+                        "hardware": self._hardware_hint(details.get("parameter_size"), details.get("quantization")),
+                    }
+                )
+            return models
+        except Exception:
+            return []
+
+    def get_model_info(self, name: str) -> Dict[str, Any]:
+        """
+        Fetch detailed info for a model (even if not installed) via /api/show.
+        """
+        try:
+            resp = requests.post(
+                "http://127.0.0.1:11434/api/show",
+                json={"name": name},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            details = data.get("details", {}) or {}
+            size_bytes = details.get("size", 0) or data.get("size", 0) or 0
+            return {
+                "name": name,
+                "size": self._format_size(size_bytes),
+                "raw_size": size_bytes,
+                "parameter_size": details.get("parameter_size"),
+                "quantization": details.get("quantization"),
+                "hardware": self._hardware_hint(details.get("parameter_size"), details.get("quantization")),
+            }
+        except Exception:
+            return {}
+
+    def pull_model(self, name: str) -> Dict[str, str]:
+        """
+        Pull a model via ollama CLI to avoid streaming API complexity.
+        """
+        try:
+            result = subprocess.run(
+                ["ollama", "pull", name],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return {"status": "success", "output": result.stdout.strip()}
+        except subprocess.CalledProcessError as e:
+            return {"status": "error", "error": e.stderr.strip() or str(e)}
+        except FileNotFoundError:
+            return {"status": "error", "error": "ollama CLI not found; install Ollama first."}
+
+    def remove_model(self, name: str) -> Dict[str, str]:
+        """
+        Remove a model via ollama CLI.
+        """
+        try:
+            result = subprocess.run(
+                ["ollama", "rm", name],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return {"status": "success", "output": result.stdout.strip()}
+        except subprocess.CalledProcessError as e:
+            return {"status": "error", "error": e.stderr.strip() or str(e)}
+        except FileNotFoundError:
+            return {"status": "error", "error": "ollama CLI not found; install Ollama first."}
+
+    def load_catalog(self) -> List[Dict[str, Any]]:
+        """
+        Load a curated list of common models with size/hardware notes.
+        """
+        catalog_path = Path(__file__).parent / "model_catalog.json"
+        if not catalog_path.exists():
+            return []
+        try:
+            with open(catalog_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("models", [])
+        except Exception:
+            return []
+
+    def _format_size(self, size_bytes: int) -> str:
+        if not size_bytes:
+            return "unknown"
+        units = ["B", "KB", "MB", "GB", "TB"]
+        size = float(size_bytes)
+        for unit in units:
+            if size < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} PB"
+
+    def _hardware_hint(self, param_size: str | None, quant: str | None) -> str:
+        """
+        Very rough guidance based on parameter size and quantization.
+        """
+        if not param_size:
+            return "CPU-friendly (small) or unknown requirements"
+        try:
+            val = param_size.lower().replace("b", "").strip()
+            num = float(val)
+        except Exception:
+            return "Check hardware; size unknown"
+
+        if num <= 1.5:
+            return "CPU-friendly; 8GB RAM OK"
+        if num <= 4:
+            return "Better with fast CPU or modest GPU"
+        if num <= 8:
+            return "Prefer discrete GPU; 16GB+ RAM"
+        return "Heavy model; strong GPU and RAM recommended"
 
     def _run_generate(self, messages: list[dict], format: str):
         provider = cfg.api_provider
@@ -38,6 +164,8 @@ class LLMWorker(QObject):
             self._generate_openai(messages, format)
         elif provider == "gemini":
             self._generate_gemini(messages, format)
+        elif provider and provider.startswith("opencode"):
+            self._generate_opencode(messages, format)
         else:
             self._generate_ollama(messages, format)
 
@@ -95,6 +223,35 @@ class LLMWorker(QObject):
             self.finished.emit(content)
         except Exception as e:
             self.error.emit(f"OpenAI Error: {e}")
+
+    def _generate_opencode(self, messages: list[dict], format: str):
+        """
+        OpenCode Grok (openai-compatible) without requiring API key.
+        """
+        url = "https://opencode.ai/zen/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json"
+        }
+        # If user provides a key anyway, respect it
+        if cfg.api_key:
+            headers["Authorization"] = f"Bearer {cfg.api_key}"
+
+        payload = {
+            "model": cfg.ollama_model or "grok-code",
+            "messages": messages
+        }
+        
+        if format == "json":
+            payload["response_format"] = {"type": "json_object"}
+
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            self.finished.emit(content)
+        except Exception as e:
+            self.error.emit(f"OpenCode Error: {e}")
 
     def _generate_gemini(self, messages: list[dict], format: str):
         if not cfg.api_key:

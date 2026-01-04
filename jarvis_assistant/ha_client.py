@@ -39,6 +39,35 @@ class HomeAssistantClient:
         resp.raise_for_status()
         return resp.json()
 
+    def delete_entity(self, entity_id: str) -> dict:
+        """
+        Attempt to delete an entity via HA API. Note: not all entities are deletable via API.
+        """
+        url = f"{self.base_url}/api/states/{entity_id}"
+        resp = requests.delete(url, headers=self._headers(), timeout=5)
+        if resp.status_code not in (200, 202, 204):
+            resp.raise_for_status()
+        try:
+            return resp.json()
+        except Exception:
+            return {"status": "deleted", "entity_id": entity_id}
+
+    def create_helper(self, helper_type: str, name: str, data: dict | None = None) -> dict:
+        """
+        Create a helper via Home Assistant config endpoints.
+        Supported helper_type: input_boolean, input_number, input_text.
+        """
+        valid = {"input_boolean", "input_number", "input_text"}
+        if helper_type not in valid:
+            raise ValueError(f"Unsupported helper type: {helper_type}")
+        payload = {"name": name}
+        if data:
+            payload.update(data)
+        url = f"{self.base_url}/api/config/{helper_type}"
+        resp = requests.post(url, headers=self._headers(), json=payload, timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
     def get_relevant_entities(self) -> str:
         """
         Fetches all states and returns a formatted string of relevant entities
@@ -68,4 +97,3 @@ class HomeAssistantClient:
             return "No relevant devices found."
             
         return "\n".join(lines)
-

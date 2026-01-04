@@ -40,6 +40,11 @@ class TTSWorker(QObject):
         # Update properties in case config changed
         self.engine.setProperty('rate', cfg.tts_rate)
         self.engine.setProperty('volume', cfg.tts_volume)
+        if cfg.tts_voice_id:
+            try:
+                self.engine.setProperty("voice", cfg.tts_voice_id)
+            except Exception:
+                pass
 
         self.engine.say(text)
         self.engine.runAndWait()

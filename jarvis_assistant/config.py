@@ -7,6 +7,7 @@ DEFAULT_OLLAMA_MODEL = "qwen2.5:0.5b"
 DEFAULT_OLLAMA_API_URL = "http://localhost:11434/api/chat"
 DEFAULT_TTS_RATE = 190
 DEFAULT_TTS_VOLUME = 1.0
+DEFAULT_TTS_VOICE_ID = None
 DEFAULT_WAKE_WORD_ENABLED = False
 DEFAULT_WAKE_WORD = "jarvis"
 DEFAULT_HA_URL = "http://192.168.188.126:8123"
@@ -74,6 +75,14 @@ class Config:
     @tts_volume.setter
     def tts_volume(self, value):
         self._settings['tts_volume'] = value
+
+    @property
+    def tts_voice_id(self):
+        return self._settings.get('tts_voice_id', DEFAULT_TTS_VOICE_ID)
+
+    @tts_voice_id.setter
+    def tts_voice_id(self, value):
+        self._settings['tts_voice_id'] = value
     
     @property
     def wake_word_enabled(self):

@@ -236,6 +236,52 @@ class JarvisController(QObject):
     def run(self):
         sys.exit(self.app.exec())
 
+    def _helper_payload(self, helper_type: str, value):
+        """
+        Build payload for helper creation; keep defaults minimal to avoid errors.
+        """
+        if helper_type == "input_number":
+            payload = {"min": 0, "max": 100, "step": 1, "mode": "slider"}
+            if isinstance(value, (int, float)):
+                payload["initial"] = value
+            return payload
+        if helper_type == "input_text":
+            payload = {"max": 100}
+            if isinstance(value, str):
+                payload["initial"] = value
+            return payload
+        # input_boolean default
+        return {}
+
+    def describe_capabilities(self) -> str:
+        """
+        Short, speech-friendly summary of what the assistant can do and how to use confirmations.
+        """
+        return (
+            "I am voice-first. I listen on your mics, transcribe locally, and talk back with system voices. "
+            "Home control: I can turn on, turn off, or toggle lights, switches, input_booleans, and other supported domains via Home Assistant. "
+            "Discovery: say 'refresh devices' after adding hardware in Home Assistant and I'll pull the latest list. "
+            "Memory: you can tell me facts to remember or ask me to recall them. "
+            "Configuration changes like adding entities or starting config flows are guarded and require your confirmation; I'll summarize before anything risky."
+        )
+
+    def refresh_entities(self) -> dict[str, str]:
+        """
+        Re-fetch entities from Home Assistant for LLM context and return a brief status payload.
+        """
+        try:
+            self.window.set_status("Refreshing devices...")
+            entities = self.ha_client.get_relevant_entities()
+            self.ha_entities = entities
+            preview = entities.splitlines()[:5]
+            return {
+                "status": "success",
+                "entities_preview": "\n".join(preview) if preview else "No relevant devices found.",
+            }
+        except Exception as e:
+            logger.error(f"Failed to refresh HA entities: {e}")
+            return {"status": "error", "error": str(e)}
+
     def handle_mic_click(self):
         # Ignore clicks during THINKING state
         if self.window.mic_btn.state == MicButton.STATE_THINKING:
@@ -309,6 +355,22 @@ class JarvisController(QObject):
             try:
                 data = json.loads(response)
                 self.current_intent = data
+
+                # Voice help intent
+                if data.get("intent") == "help":
+                    self.current_action_taken = {
+                        "action": "help",
+                        "capabilities": self.describe_capabilities(),
+                    }
+                    self.start_response_agent()
+                    return
+
+                # Voice-triggered entity refresh
+                if data.get("intent") == "refresh_entities" or data.get("action") == "refresh":
+                    refresh_result = self.refresh_entities()
+                    self.current_action_taken = {"action": "refresh_entities", **refresh_result}
+                    self.start_response_agent()
+                    return
                 
                 # Handle Memory Write Intent
                 if data.get("intent") == "memory_write" or (data.get("action") == "remember"):
@@ -356,6 +418,30 @@ class JarvisController(QObject):
                     messages.append({"role": "user", "content": f"Intent: {json.dumps(data)}. User: {self.current_user_text}"})
                     
                     self.llm_worker.generate(messages, format="json")
+                elif data.get("intent") == "helper_create":
+                    # Stage a confirmation; do not execute until user confirms
+                    helper_type = (data.get("helper_type") or "input_boolean").strip()
+                    helper_name = data.get("helper_name") or self.current_user_text.strip() or "New Helper"
+                    helper_value = data.get("helper_value")
+                    self.current_action_taken = {
+                        "pending": True,
+                        "action": "create_helper",
+                        "helper_type": helper_type,
+                        "helper_name": helper_name,
+                        "helper_value": helper_value,
+                        "message": f"Create {helper_type} named '{helper_name}'?"
+                    }
+                    self.start_response_agent()
+                elif data.get("intent") == "helper_delete":
+                    # Stage deletion confirmation
+                    target = data.get("target") or data.get("helper_name") or self.current_user_text.strip()
+                    self.current_action_taken = {
+                        "pending": True,
+                        "action": "delete_helper",
+                        "entity_id": target,
+                        "message": f"Delete helper/entity '{target}'?"
+                    }
+                    self.start_response_agent()
                 else:
                     # Skip to Response Agent
                     self.current_action_taken = None
@@ -400,6 +486,38 @@ class JarvisController(QObject):
             logger.info(f"Assistant: {reply}")
             self.conversation.add_message("assistant", reply)
             self.window.add_message(reply, is_user=False)
+            
+            # Handle confirmations for pending actions
+            if isinstance(self.current_action_taken, dict) and self.current_action_taken.get("pending"):
+                normalized = reply.lower()
+                if any(k in normalized for k in ["yes", "sure", "do it", "confirm"]):
+                    action = self.current_action_taken.get("action")
+                    try:
+                        if action == "create_helper":
+                            helper_type = self.current_action_taken.get("helper_type", "input_boolean")
+                            helper_name = self.current_action_taken.get("helper_name", "New Helper")
+                            helper_value = self.current_action_taken.get("helper_value")
+                            created = self.ha_client.create_helper(
+                                helper_type,
+                                helper_name,
+                                self._helper_payload(helper_type, helper_value),
+                            )
+                            self.current_action_taken = {"action": "create_helper", "result": created}
+                        elif action == "delete_helper":
+                            entity_id = self.current_action_taken.get("entity_id")
+                            deleted = self.ha_client.delete_entity(entity_id)
+                            self.current_action_taken = {"action": "delete_helper", "result": deleted}
+                    except Exception as e:
+                        self.current_action_taken = {"error": str(e)}
+                    # Restart response agent to report final result
+                    self.start_response_agent()
+                    return
+                else:
+                    # Cancel pending action
+                    self.current_action_taken = {"action": "cancelled"}
+                    self.start_response_agent()
+                    return
+
             self.window.set_status("Speaking...")
             self.request_tts.emit(reply)
             self.current_state = "idle"
