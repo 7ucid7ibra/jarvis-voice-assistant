@@ -25,7 +25,9 @@ COLOR_BUBBLE_ASSISTANT = "#0f1520"
 COLOR_TEXT_PRIMARY = "#ffffff"
 COLOR_TEXT_SECONDARY = "#888888"
 
-SETTINGS_FILE = "settings.json"
+# Resolve absolute path for settings.json
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 
 class Config:
     def __init__(self):

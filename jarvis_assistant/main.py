@@ -188,6 +188,7 @@ class JarvisController(QObject):
         self.tts_worker = TTSWorker()
         self.memory_manager = MemoryManager()
         # self.wake_word_worker = WakeWordWorker() # Removed
+        self.pending_action = None
         
         # Threads
         self.stt_thread = QThread()
@@ -253,6 +254,36 @@ class JarvisController(QObject):
         # input_boolean default
         return {}
 
+    def execute_pending_action(self):
+        """Execute pending helper actions after explicit confirmation from user."""
+        if not self.pending_action:
+            return
+        action = self.pending_action.get("action")
+        try:
+            if action == "create_helper":
+                helper_type = self.pending_action.get("helper_type", "input_boolean")
+                helper_name = self.pending_action.get("helper_name", "New Helper")
+                helper_value = self.pending_action.get("helper_value")
+                created = self.ha_client.create_helper(
+                    helper_type,
+                    helper_name,
+                    self._helper_payload(helper_type, helper_value),
+                )
+                refreshed = self.ha_client.get_relevant_entities()
+                self.ha_entities = refreshed
+                self.current_action_taken = {"action": "create_helper", "result": created, "entities": refreshed}
+            elif action == "delete_helper":
+                entity_id = self.pending_action.get("entity_id")
+                deleted = self.ha_client.delete_entity(entity_id)
+                refreshed = self.ha_client.get_relevant_entities()
+                self.ha_entities = refreshed
+                self.current_action_taken = {"action": "delete_helper", "result": deleted, "entities": refreshed}
+        except Exception as e:
+            self.current_action_taken = {"error": str(e)}
+        finally:
+            self.pending_action = None
+            self.start_response_agent()
+
     def describe_capabilities(self) -> str:
         """
         Short, speech-friendly summary of what the assistant can do and how to use confirmations.
@@ -316,7 +347,19 @@ class JarvisController(QObject):
             self.window.set_status("Idle")
             
             return
-            
+
+        # Handle pending confirmations (yes/no) before normal intent flow
+        if self.pending_action:
+            lowered = text.strip().lower()
+            if any(k in lowered for k in ["yes", "sure", "do it", "confirm", "okay", "ok", "please do", "go ahead"]):
+                self.execute_pending_action()
+                return
+            if any(k in lowered for k in ["no", "cancel", "stop", "don't"]):
+                self.pending_action = None
+                self.current_action_taken = {"action": "cancelled"}
+                self.start_response_agent()
+                return
+        
         self.conversation.add_message("user", text)
         self.window.add_message(text, is_user=True)
         
@@ -423,7 +466,7 @@ class JarvisController(QObject):
                     helper_type = (data.get("helper_type") or "input_boolean").strip()
                     helper_name = data.get("helper_name") or self.current_user_text.strip() or "New Helper"
                     helper_value = data.get("helper_value")
-                    self.current_action_taken = {
+                    self.pending_action = {
                         "pending": True,
                         "action": "create_helper",
                         "helper_type": helper_type,
@@ -431,16 +474,18 @@ class JarvisController(QObject):
                         "helper_value": helper_value,
                         "message": f"Create {helper_type} named '{helper_name}'?"
                     }
+                    self.current_action_taken = self.pending_action
                     self.start_response_agent()
                 elif data.get("intent") == "helper_delete":
                     # Stage deletion confirmation
                     target = data.get("target") or data.get("helper_name") or self.current_user_text.strip()
-                    self.current_action_taken = {
+                    self.pending_action = {
                         "pending": True,
                         "action": "delete_helper",
                         "entity_id": target,
                         "message": f"Delete helper/entity '{target}'?"
                     }
+                    self.current_action_taken = self.pending_action
                     self.start_response_agent()
                 else:
                     # Skip to Response Agent
@@ -487,37 +532,6 @@ class JarvisController(QObject):
             self.conversation.add_message("assistant", reply)
             self.window.add_message(reply, is_user=False)
             
-            # Handle confirmations for pending actions
-            if isinstance(self.current_action_taken, dict) and self.current_action_taken.get("pending"):
-                normalized = reply.lower()
-                if any(k in normalized for k in ["yes", "sure", "do it", "confirm"]):
-                    action = self.current_action_taken.get("action")
-                    try:
-                        if action == "create_helper":
-                            helper_type = self.current_action_taken.get("helper_type", "input_boolean")
-                            helper_name = self.current_action_taken.get("helper_name", "New Helper")
-                            helper_value = self.current_action_taken.get("helper_value")
-                            created = self.ha_client.create_helper(
-                                helper_type,
-                                helper_name,
-                                self._helper_payload(helper_type, helper_value),
-                            )
-                            self.current_action_taken = {"action": "create_helper", "result": created}
-                        elif action == "delete_helper":
-                            entity_id = self.current_action_taken.get("entity_id")
-                            deleted = self.ha_client.delete_entity(entity_id)
-                            self.current_action_taken = {"action": "delete_helper", "result": deleted}
-                    except Exception as e:
-                        self.current_action_taken = {"error": str(e)}
-                    # Restart response agent to report final result
-                    self.start_response_agent()
-                    return
-                else:
-                    # Cancel pending action
-                    self.current_action_taken = {"action": "cancelled"}
-                    self.start_response_agent()
-                    return
-
             self.window.set_status("Speaking...")
             self.request_tts.emit(reply)
             self.current_state = "idle"

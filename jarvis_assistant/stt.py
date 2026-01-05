@@ -1,4 +1,9 @@
-import whisper
+try:
+    import whisper
+except ImportError:
+    print("WARNING: 'openai-whisper' not found. STT will be disabled.")
+    whisper = None
+
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 from .config import cfg
