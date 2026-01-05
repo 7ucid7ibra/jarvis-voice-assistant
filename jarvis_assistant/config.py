@@ -15,6 +15,7 @@ DEFAULT_HA_TOKEN = ""  # normally provided via env var
 DEFAULT_LANGUAGE = None  # None = auto, "en" = English, "de" = German
 DEFAULT_API_PROVIDER = "ollama"
 DEFAULT_API_KEY = ""
+DEFAULT_TODO_ENTITY = "todo.shopping_list"
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -143,6 +144,14 @@ class Config:
     @api_key.setter
     def api_key(self, value: str) -> None:
         self._settings["api_key"] = value
+
+    @property
+    def todo_entity(self) -> str:
+        return self._settings.get("todo_entity", DEFAULT_TODO_ENTITY)
+
+    @todo_entity.setter
+    def todo_entity(self, value: str) -> None:
+        self._settings["todo_entity"] = value
     
     def save(self):
         try:

@@ -52,6 +52,27 @@ class HomeAssistantClient:
         except Exception:
             return {"status": "deleted", "entity_id": entity_id}
 
+    # --- To-Do / Reminders ---
+    def add_todo_item(self, entity_id: str, title: str, due: str | None = None, description: str | None = None) -> dict:
+        payload = {"item": title}
+        if description:
+            payload["description"] = description
+        if due:
+            payload["due"] = due
+        resp = requests.post(f"{self.base_url}/api/services/todo/add_item", headers=self._headers(), json={"entity_id": entity_id, "item": title, **({} if not description else {"description": description}), **({} if not due else {"due": due})}, timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
+    def remove_todo_item(self, entity_id: str, title: str) -> dict:
+        resp = requests.post(f"{self.base_url}/api/services/todo/remove_item", headers=self._headers(), json={"entity_id": entity_id, "item": title}, timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
+    def list_todo_items(self, entity_id: str) -> list:
+        resp = requests.get(f"{self.base_url}/api/todo/{entity_id}", headers=self._headers(), timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
     def create_helper(self, helper_type: str, name: str, data: dict | None = None) -> dict:
         """
         Create a helper via Home Assistant config endpoints.

@@ -220,6 +220,7 @@ class JarvisController(QObject):
         
         # UI Signals
         self.window.mic_btn.clicked.connect(self.handle_mic_click)
+        self.window.chat_input.returnPressed.connect(self.handle_text_input)
         
         # Start Threads
         self.stt_thread.start()
@@ -278,6 +279,17 @@ class JarvisController(QObject):
                 refreshed = self.ha_client.get_relevant_entities()
                 self.ha_entities = refreshed
                 self.current_action_taken = {"action": "delete_helper", "result": deleted, "entities": refreshed}
+            elif action == "add_todo":
+                title = self.pending_action.get("todo_title")
+                due = self.pending_action.get("todo_due")
+                added = self.ha_client.add_todo_item(cfg.todo_entity, title, due=due)
+                items = self.ha_client.list_todo_items(cfg.todo_entity)
+                self.current_action_taken = {"action": "add_todo", "result": added, "items": items}
+            elif action == "remove_todo":
+                title = self.pending_action.get("todo_title")
+                removed = self.ha_client.remove_todo_item(cfg.todo_entity, title)
+                items = self.ha_client.list_todo_items(cfg.todo_entity)
+                self.current_action_taken = {"action": "remove_todo", "result": removed, "items": items}
         except Exception as e:
             self.current_action_taken = {"error": str(e)}
         finally:
@@ -319,6 +331,9 @@ class JarvisController(QObject):
             return
             
         if self.window.mic_btn.state == MicButton.STATE_IDLE:
+            if not self.stt_worker.is_available():
+                self.window.set_status("STT Disabled (Whisper missing)")
+                return
             self.window.mic_btn.set_state(MicButton.STATE_LISTENING)
             self.window.set_status("Listening...")
             self.audio_recorder.start_recording()
@@ -341,6 +356,20 @@ class JarvisController(QObject):
         self.window.set_status("Transcribing...")
         self.request_stt.emit(audio_data)
 
+    def handle_text_input(self):
+        text = self.window.chat_input.text().strip()
+        if not text:
+            return
+            
+        self.window.chat_input.clear()
+        
+        # Similar logic to handle_stt_finished but for text
+        self.conversation.add_message("user", text)
+        self.window.add_message(text, is_user=True)
+        
+        self.window.set_status("Thinking...")
+        self.start_processing(text)
+
     def handle_stt_finished(self, text):
         if not text:
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
@@ -351,7 +380,7 @@ class JarvisController(QObject):
         # Handle pending confirmations (yes/no) before normal intent flow
         if self.pending_action:
             lowered = text.strip().lower()
-            if any(k in lowered for k in ["yes", "sure", "do it", "confirm", "okay", "ok", "please do", "go ahead"]):
+            if any(k in lowered for k in ["yes", "sure", "do it", "confirm", "okay", "ok", "please do", "go ahead", "proceed"]):
                 self.execute_pending_action()
                 return
             if any(k in lowered for k in ["no", "cancel", "stop", "don't"]):
@@ -484,6 +513,28 @@ class JarvisController(QObject):
                         "action": "delete_helper",
                         "entity_id": target,
                         "message": f"Delete helper/entity '{target}'?"
+                    }
+                    self.current_action_taken = self.pending_action
+                    self.start_response_agent()
+                elif data.get("intent") == "todo_add":
+                    title = data.get("todo_title") or self.current_user_text
+                    due = data.get("todo_due")
+                    self.pending_action = {
+                        "pending": True,
+                        "action": "add_todo",
+                        "todo_title": title,
+                        "todo_due": due,
+                        "message": f"Add reminder '{title}'" + (f" due {due}" if due else "") + "?"
+                    }
+                    self.current_action_taken = self.pending_action
+                    self.start_response_agent()
+                elif data.get("intent") == "todo_remove":
+                    title = data.get("todo_title") or self.current_user_text
+                    self.pending_action = {
+                        "pending": True,
+                        "action": "remove_todo",
+                        "todo_title": title,
+                        "message": f"Remove reminder '{title}'?"
                     }
                     self.current_action_taken = self.pending_action
                     self.start_response_agent()

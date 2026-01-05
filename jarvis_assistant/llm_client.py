@@ -2,8 +2,10 @@ import requests
 import json
 import threading # Added for the new generate method
 import subprocess
+import time
 from pathlib import Path
 from typing import List, Dict, Any
+from requests.exceptions import ConnectionError, HTTPError, Timeout, RequestException
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 from .config import cfg
 
@@ -13,6 +15,10 @@ class LLMWorker(QObject):
     """
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.tried_start_ollama = False
 
     def generate(self, messages: list[dict], format: str = "json"):
         """
@@ -30,6 +36,7 @@ class LLMWorker(QObject):
         """
         Returns installed models with metadata (name, size, params, quantization).
         """
+        self._ensure_ollama_running(force_start=True)
         try:
             url = "http://127.0.0.1:11434/api/tags"
             resp = requests.get(url, timeout=5)
@@ -184,14 +191,70 @@ class LLMWorker(QObject):
         if format == "json":
             payload["format"] = "json"
 
+        if not self._ensure_ollama_running():
+            self.error.emit("Ollama is not reachable. Start it with 'ollama serve' and ensure port 11434 is open.")
+            return
+
         try:
             response = requests.post(url, json=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
             content = result.get("message", {}).get("content", "")
             self.finished.emit(content)
-        except Exception as e:
+            return
+        except ConnectionError:
+            if self._ensure_ollama_running(force_start=True):
+                try:
+                    response = requests.post(url, json=payload, timeout=60)
+                    response.raise_for_status()
+                    result = response.json()
+                    content = result.get("message", {}).get("content", "")
+                    self.finished.emit(content)
+                    return
+                except Exception as e:
+                    self.error.emit(f"Ollama Error after retry: {e}")
+            self.error.emit("Ollama is not reachable. Start it with 'ollama serve' and ensure port 11434 is open.")
+        except HTTPError as e:
+            self.error.emit(f"Ollama returned an HTTP error: {e}")
+        except Timeout:
+            self.error.emit("Ollama request timed out. Try again in a moment.")
+        except RequestException as e:
             self.error.emit(f"Ollama Error: {e}")
+
+    def _ensure_ollama_running(self, force_start: bool = False) -> bool:
+        """
+        Ping Ollama; optionally try to start it if not reachable.
+        """
+        try:
+            resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=2)
+            if resp.status_code == 200:
+                return True
+        except Exception:
+            pass
+
+        if force_start and not self.tried_start_ollama:
+            self.tried_start_ollama = True
+            try:
+                # First try CLI
+                subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(2)
+                try:
+                    resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+                    if resp.status_code == 200:
+                        return True
+                except Exception:
+                    pass
+                # Fallback: launch the macOS app if present
+                subprocess.Popen(["open", "-a", "Ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(3)
+                try:
+                    resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+                    return resp.status_code == 200
+                except Exception:
+                    return False
+            except Exception:
+                return False
+        return False
 
     def _ensure_model_pulled(self, model_name: str):
         # Deprecated in favor of manual pull
@@ -278,8 +341,8 @@ class LLMWorker(QObject):
             
         # Handle system prompt
         system_prompt = next((m["content"] for m in messages if m["role"] == "system"), None)
-        
-        payload = {
+
+        payload: Dict[str, Any] = {
             "contents": contents
         }
         

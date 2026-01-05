@@ -13,13 +13,14 @@ from PyQt6.QtGui import (
     QLinearGradient, QFont, QPainterPath
 )
 import threading
+import os
 from .config import cfg, COLOR_BACKGROUND, COLOR_ACCENT_CYAN, COLOR_ACCENT_TEAL
 from .utils import logger
 from .utils import logger
 
 from .ui_framework import (
     GOLDEN_RATIO, BioMechCasing, COLOR_CHASSIS_DARK, COLOR_CHASSIS_MID,
-    COLOR_ELECTRIC_BLUE, COLOR_SCREEN_BG, COLOR_AMBER_ALERT, BreathingAnim, KineticAnim
+    COLOR_ELECTRIC_BLUE, COLOR_SCREEN_BG, COLOR_PLASMA_CYAN, COLOR_AMBER_ALERT, BreathingAnim, KineticAnim
 )
 
 class MicButton(QWidget):
@@ -210,7 +211,7 @@ class ChatBubble(QFrame):
         
         label = QLabel(text)
         label.setWordWrap(True)
-        label.setFont(QFont("Consolas", 12)) 
+        label.setFont(QFont("Menlo", 12)) 
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         
         # Tech / Console Feel (Silver vs Blue)
@@ -630,16 +631,25 @@ class SettingsDialog(QDialog):
             engine = pyttsx3.init()
             voices = engine.getProperty("voices")
             self.voice_combo.clear()
-            
+
             saved_voice_id = cfg.tts_voice_id
             target_index = -1
-            
-            for i, v in enumerate(voices):
-                name = getattr(v, "name", "voice")
-                self.voice_combo.addItem(name, v.id)
-                if saved_voice_id and v.id == saved_voice_id:
-                    target_index = i
-            
+
+            selected_voices = ["Samantha", "Karen", "Daniel", "Albert", "Alice"]
+
+            # Add Piper if exists
+            piper_path = os.path.join(os.getcwd(), "models", "tts", "en_US-amy-medium.onnx")
+            if os.path.exists(piper_path):
+                self.voice_combo.addItem("Piper (Amy) [AI]", "piper")
+                if saved_voice_id == "piper" or not saved_voice_id:
+                    target_index = self.voice_combo.count() - 1
+
+            for v in voices:
+                if v.name in selected_voices:
+                    self.voice_combo.addItem(v.name, v.id)
+                    if saved_voice_id and v.id == saved_voice_id:
+                        target_index = self.voice_combo.count() - 1
+
             if target_index >= 0:
                 self.voice_combo.setCurrentIndex(target_index)
             elif self.voice_combo.count() > 0:
@@ -875,6 +885,13 @@ class MainWindow(QMainWindow):
         self.toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_history_btn.clicked.connect(self.toggle_history)
         
+        self.mute_btn = QPushButton("🔊")
+        self.mute_btn.setFixedSize(28, 28)
+        self.mute_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
+        self.mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mute_btn.clicked.connect(self.toggle_mute)
+        self.is_muted = False
+        
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(30, 30)
         close_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px;")
@@ -884,6 +901,7 @@ class MainWindow(QMainWindow):
         header.addWidget(title)
         header.addStretch()
         header.addWidget(self.toggle_history_btn)
+        header.addWidget(self.mute_btn)
         header.addWidget(settings_btn)
         header.addWidget(close_btn)
         layout.addLayout(header)
@@ -926,12 +944,33 @@ class MainWindow(QMainWindow):
         
         # Control Deck
         deck_layout = QVBoxLayout()
+        
+        self.chat_input = QLineEdit()
+        self.chat_input.setPlaceholderText("Direct Interface...")
+        self.chat_input.setStyleSheet(f"""
+            QLineEdit {{
+                background: {COLOR_SCREEN_BG};
+                color: {COLOR_ELECTRIC_BLUE};
+                border: 1px solid #444;
+                border-radius: 8px;
+                padding: 10px 15px;
+                font-family: 'SF Mono', Menlo, Monaco, monospace;
+                font-size: 13px;
+                margin-bottom: 10px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {COLOR_ELECTRIC_BLUE};
+                background: #001122;
+            }}
+        """)
+        deck_layout.addWidget(self.chat_input)
+
         self.mic_btn = MicButton()
         deck_layout.addWidget(self.mic_btn, alignment=Qt.AlignmentFlag.AlignCenter)
         
         self.status_label = QLabel("SYSTEM IDLE")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet(f"color: #666; font-family: Consolas; font-weight: bold; font-size: 11px; margin-top: 10px; letter-spacing: 1px;")
+        self.status_label.setStyleSheet(f"color: #666; font-family: 'SF Mono', Menlo, Monaco, monospace; font-weight: bold; font-size: 11px; margin-top: 10px; letter-spacing: 1px;")
         deck_layout.addWidget(self.status_label)
         
         layout.addLayout(deck_layout)
@@ -996,6 +1035,23 @@ class MainWindow(QMainWindow):
             self.toggle_history_btn.setText("Show Chat")
  
         self.anim.start()
+
+    def toggle_mute(self):
+        """Toggle TTS mute state"""
+        self.is_muted = not self.is_muted
+        
+        if self.is_muted:
+            # Mute TTS by setting volume to 0
+            cfg.tts_volume = 0.0
+            self.mute_btn.setText("🔇")
+            self.mute_btn.setStyleSheet("color: #FF6666; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
+        else:
+            # Unmute TTS by restoring volume to default
+            cfg.tts_volume = 1.0
+            self.mute_btn.setText("🔊")
+            self.mute_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
+        
+        cfg.save()
 
     def set_status(self, text):
         self.status_label.setText(text.upper())
