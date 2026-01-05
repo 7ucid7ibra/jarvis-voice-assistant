@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Jarvis Assistant</string>
+    <key>CFBundleName</key>
+    <string>Jarvis Assistant</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.jarvis.assistant</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleExecutable</key>
+    <string>Jarvis Assistant</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Jarvis Project. Built for the locally-hosted future.</string>
+    <key>CFBundleURLTypes</key>
+    <array/>
+    <key>CFBundleDocumentTypes</key>
+    <array/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Jarvis Assistant needs microphone access to listen to your voice commands.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Jarvis Assistant uses speech recognition to understand your voice commands.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

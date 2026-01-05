@@ -1,0 +1,1 @@
+I still need to check the code on what the program is actually using for the AI voice, text-to-speech.

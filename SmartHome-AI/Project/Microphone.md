@@ -1,0 +1,1 @@
+The systems ears, right now its my [[MacBook Pro]]'s mic but soon it will be the [[ESP32-S3]] i think it also has a mic.

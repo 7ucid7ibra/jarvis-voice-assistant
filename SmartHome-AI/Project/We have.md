@@ -1,0 +1,15 @@
+- My [[MacBook Pro]]  -upgrade
+- [[Raspberry Pi-3]] -upgrade
+- 2x [[ESP32-V3 LoRa]] + OLED
+- [[RaspberryPi-Zero]]
+- [[ESP32-C3]] 
+- [[ESP32-S3]] 
+- [[Aquara motion sensor]]
+- [[ZBT-2]] SmartHomeHub
+- NanoLeaf Bulb
+- My Ledvance BT Bulb
+- My Ledvance WiFi plug
+- x2 sd cards (32gb & 8gb) - need more
+- x2.5 my USBC Datastream cable - need more
+- x1.5 my micro usb Datastream cable - need more
+- 

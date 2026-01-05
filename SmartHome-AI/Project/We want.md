@@ -1,0 +1,1 @@
+- An [[LLM]] controlling [[Smart Home Appliances]] with a [[Local Database]] and own [[Information retention & retrieval logic]] and [[Decision making]] so it can take [[Actions]], based on its own [[Reasoning]].

@@ -1,0 +1,1 @@
+Here I will think about how it will retain said information and what kind of [[Local Database]] will be used. 

@@ -1,0 +1,1 @@
+The user will interact with his smart home using his voice and hands for commands (the AI will use [[Microphone]] and [[Screens]] to retrieve them) and his eyes and ears to retrieve information through [[Screens]] and [[Speakers]]. 

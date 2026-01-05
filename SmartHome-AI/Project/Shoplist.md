@@ -1,0 +1,9 @@
+- Better Computer for AI-Brain
+- Speakers for AI voice output interface
+- Screens/displays for human-machine interface
+- Better microphone for voice input (ESP32-S3 has onboard, but dedicated mic may be needed)
+- More SD cards (various sizes for Raspberry Pi and ESP32 projects)
+- More USB-C data cables
+- More micro USB data cables
+- Battery packs for portable ESP32 devices
+- Sensors (temperature, humidity, etc.) for smart home monitoring

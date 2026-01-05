@@ -1,0 +1,4 @@
+- [[Home-Assistant OS]] 
+- [[L-LLM]]
+- [[Code]] for handshakes, protocol translation, taking [[Actions]] and the [[GUI]]
+- [[Interface]] [[GUI]] on [[Screens]]

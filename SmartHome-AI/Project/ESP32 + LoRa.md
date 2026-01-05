@@ -1,0 +1,3 @@
+I don't know what I will be using this for yet. Maybe this is useful for sending commands or information between the client's forces that are not so far apart.
+
+**AI ADVICE:** LoRa on ESP32 enables long-range (up to 10km), low-power wireless for remote nodes (e.g., outdoor sensors or commands to distant appliances). Use for backup communication if Wi-Fi/Thread fails. Research: ESP32 LoRa libraries (e.g., RadioLib); pair with OLED for status displays. Not ideal for real-time voice, but good for periodic updates.

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jarvis AI | Biomechanical Neural Interface</title>
+    <meta name="description"
+        content="Advanced local AI agent with biomechanical UI. Multi-provider LLM support, reactive animations, and Home Assistant integration.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@200;500;700&family=JetBrains+Mono:wght@400;700&family=Consolas:wght@400;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="circuit-bg"></div>
+    <div class="grid-overlay"></div>
+    <div class="particles"></div>
+
+    <nav class="biomech-nav">
+        <div class="nav-container">
+            <div class="logo">JARVIS<span class="core-glow">●</span>NEURAL</div>
+            <ul class="nav-links">
+                <li><a href="#logic">Agent Logic</a></li>
+                <li><a href="#architecture">Architecture</a></li>
+                <li><a href="#ui">UI Framework</a></li>
+                <li><a href="#models">AI Models</a></li>
+                <li><a href="#home">Smart Home</a></li>
+                <li><a href="#install" class="nav-cta">Initialize</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main>
+        <!-- HERO SECTION -->
+        <section id="hero" class="hero">
+            <div class="hero-content">
+                <div class="status-indicator">
+                    <div class="pulse-ring"></div>
+                    <span class="status-text">SYSTEM ONLINE</span>
+                </div>
+                <h1>The <span class="plasma-text">Biomechanical</span> Interface<br>For Your Home.</h1>
+                <p>An intelligent voice assistant with reactive neural core, multi-provider AI support, and frameless biomechanical design. Adapts, learns, and controls with precision.</p>
+                <div class="hero-btns">
+                    <a href="#logic" class="btn btn-primary">Enter Neural Core</a>
+                    <a href="https://github.com/your-repo/jarvis" target="_blank" class="btn btn-secondary">View Source</a>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="neural-core">
+                    <div class="reactor-center"></div>
+                    <div class="pulse-wave wave-1"></div>
+                    <div class="pulse-wave wave-2"></div>
+                    <div class="pulse-wave wave-3"></div>
+                    <div class="rotating-ring ring-1"></div>
+                    <div class="rotating-ring ring-2"></div>
+                    <div class="core-glow-effect"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- UI FRAMEWORK SECTION -->
+        <section id="ui" class="section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>BioMech <span class="plasma-text">UI Framework</span></h2>
+                    <p>Golden ratio proportions, kinetic animations, and reactive neural core design.</p>
+                </div>
+
+                <div class="ui-showcase">
+                    <div class="ui-component">
+                        <h4>🎨 Frameless Design</h4>
+                        <div class="tech-details">
+                            <p><strong>Custom Title Bar:</strong> Dragging support with biomechanical casing</p>
+                            <p><strong>No OS Chrome:</strong> Immersive experience with custom controls</p>
+                            <p><strong>Alpha Blending:</strong> Smooth transitions and hover states</p>
+                        </div>
+                    </div>
+
+                    <div class="ui-component">
+                        <h4>⚡ Reactive Animations</h4>
+                        <div class="tech-details">
+                            <p><strong>Breathing Effects:</strong> Idle state with organic pulsing</p>
+                            <p><strong>Kinetic Transitions:</strong> Smooth size/position interpolation</p>
+                            <p><strong>Voice Amplitude:</strong> Real-time speech visualization</p>
+                        </div>
+                    </div>
+
+                    <div class="ui-component">
+                        <h4>🎯 Advanced Mic Button</h4>
+                        <div class="tech-details">
+                            <p><strong>Multi-State:</strong> Idle, Listening, Thinking, Speaking</p>
+                            <p><strong>Core Reactivity:</strong> Dynamic size and glow effects</p>
+                            <p><strong>60 FPS:</strong> Smooth real-time animations</p>
+                        </div>
+                    </div>
+
+                    <div class="ui-component">
+                        <h4>💬 Tech Console Chat</h4>
+                        <div class="tech-details">
+                            <p><strong>Console Aesthetic:</strong> Silver vs Blue message styling</p>
+                            <p><strong>Consolas Font:</strong> Terminal-style typography</p>
+                            <p><strong>Selectable Text:</strong> Easy copy and interaction</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="code-preview">
+                    <h4>🔧 Animation System</h4>
+                    <div class="code-window">
+                        <div class="window-header">
+                            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+                            <span class="title">ui_framework.py</span>
+                        </div>
+                        <div class="code-content">
+                            <pre><span class="comment">// BioMech golden ratio sizing</span>
+<span class="keyword">class</span> BreathingAnim:
+    <span class="keyword">def</span> <span class="function">update</span>(self):
+        glow = 0.3 + (math.sin(time.time() * 2) + 1) / 2
+        self.target._glow_factor = glow
+        self.target.update()
+
+<span class="comment">// Kinetic transitions with easing</span>
+<span class="keyword">class</span> KineticAnim:
+    <span class="keyword">def</span> <span class="function">start</span>(self):
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.animation.start()</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- AGENT LOGIC SECTION -->
+        <section id="logic" class="section alt-bg">
+            <div class="container">
+                <div class="section-header">
+                    <h2>The <span class="plasma-text">Enhanced</span> Agent Pipeline</h2>
+                    <p>Multi-agent system with confirmation detection and concise responses.</p>
+                </div>
+
+                <!-- Interactive Flow Diagram -->
+                <div class="flow-diagram">
+                    <div class="flow-step" id="step-input">
+                        <div class="step-icon">🎤</div>
+                        <div class="step-content">
+                            <h3>Voice Input</h3>
+                            <p>Push-to-talk with reactive mic button. 16kHz mono capture for optimal Whisper processing.</p>
+                        </div>
+                        <div class="connector-line"></div>
+                    </div>
+
+                    <div class="flow-step" id="step-classifier">
+                        <div class="step-icon">🧠</div>
+                        <div class="step-content">
+                            <h3>Intent Classifier</h3>
+                            <p>Enhanced intent detection with confirmation parsing: <span class="tech-term"
+                                    data-desc="Control smart devices via Home Assistant API.">home_control</span>, <span
+                                    class="tech-term" data-desc="Natural conversation with AI personality.">conversation</span>, <span
+                                    class="tech-term" data-desc="Store facts in persistent JSON memory.">memory_write</span>, <span
+                                    class="tech-term" data-desc="Retrieve stored facts from memory.">memory_read</span>, <span
+                                    class="tech-term" data-desc="Create Home Assistant helpers.">helper_create</span>, <span
+                                    class="tech-term" data-desc="Device discovery refresh.">refresh_entities</span>.
+                            </p>
+                        </div>
+                        <div class="connector-line"></div>
+                    </div>
+
+                    <div class="flow-branch">
+                        <div class="branch-path" data-path="control">
+                            <div class="flow-step mini" id="step-action">
+                                <div class="step-icon">⚙️</div>
+                                <h4>Action Agent</h4>
+                                <p>Generates structured JSON for <span class="tech-term"
+                                        data-desc="Open source home automation platform with REST API.">Home Assistant</span>. Supports turn_on, turn_off, toggle operations.</p>
+                            </div>
+                        </div>
+                        <div class="branch-path" data-path="chat">
+                            <div class="flow-step mini" id="step-chat">
+                                <div class="step-icon">💬</div>
+                                <h4>Response Agent</h4>
+                                <p>Concise responses without echoing system context. Confirmation-aware communication.</p>
+                            </div>
+                        </div>
+                        <div class="branch-path" data-path="memory">
+                            <div class="flow-step mini" id="step-memory">
+                                <div class="step-icon">💾</div>
+                                <h4>Memory Manager</h4>
+                                <p>Persistent <span class="tech-term"
+                                        data-desc="Simple JSON file storage with key-value pairs.">memory.json</span> with intelligent context injection.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flow-step" id="step-response">
+                        <div class="connector-line reverse"></div>
+                        <div class="step-icon">🔊</div>
+                        <div class="step-content">
+                            <h3>Voice Output</h3>
+                            <p>Enhanced pyttsx3 with voice selection and configurable rate/volume.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI MODELS SECTION -->
+        <section id="models" class="section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>Multi-Provider <span class="plasma-text">AI Support</span></h2>
+                    <p>Choose your intelligence backend. Local privacy or cloud power - switch instantly.</p>
+                </div>
+
+                <div class="model-showcase">
+                    <!-- Local Model Card -->
+                    <div class="model-card local" id="local-model">
+                        <div class="card-header">
+                            <div class="model-icon">
+                                <div class="cpu-core">
+                                    <div class="core-ring"></div>
+                                    <div class="core-center"></div>
+                                </div>
+                            </div>
+                            <div class="model-info">
+                                <h3>Local Processing</h3>
+                                <div class="model-badge primary">Default</div>
+                            </div>
+                        </div>
+                        
+                        <div class="tech-stack">
+                            <div class="stack-item">
+                                <span class="stack-icon">🦙</span>
+                                <span class="stack-name">Ollama</span>
+                            </div>
+                            <div class="stack-item">
+                                <span class="stack-icon">🧠</span>
+                                <span class="stack-name">Qwen 2.5</span>
+                            </div>
+                            <div class="stack-item">
+                                <span class="stack-icon">🦜</span>
+                                <span class="stack-name">Llama 3.2</span>
+                            </div>
+                        </div>
+
+                        <div class="features-list">
+                            <div class="feature-item">
+                                <span class="feature-icon">🔒</span>
+                                <span>100% Private</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">⚡</span>
+                                <span>Zero Latency</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">🌐</span>
+                                <span>Offline Ready</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">📚</span>
+                                <span>Model Catalog</span>
+                            </div>
+                        </div>
+
+                        <div class="performance-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Response Time</span>
+                                <span class="metric-value">1-2s</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Privacy</span>
+                                <span class="metric-value">Maximum</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cloud Model Card -->
+                    <div class="model-card cloud" id="cloud-model">
+                        <div class="card-header">
+                            <div class="model-icon">
+                                <div class="cloud-core">
+                                    <div class="cloud-particles">
+                                        <div class="particle"></div>
+                                        <div class="particle"></div>
+                                        <div class="particle"></div>
+                                    </div>
+                                    <div class="cloud-center"></div>
+                                </div>
+                            </div>
+                            <div class="model-info">
+                                <h3>Cloud Processing</h3>
+                                <div class="model-badge secondary">Optional</div>
+                            </div>
+                        </div>
+                        
+                        <div class="tech-stack">
+                            <div class="stack-item">
+                                <span class="stack-icon">🚀</span>
+                                <span class="stack-name">Gemini 2.0</span>
+                            </div>
+                            <div class="stack-item">
+                                <span class="stack-icon">🧬</span>
+                                <span class="stack-name">GPT-4o</span>
+                            </div>
+                            <div class="stack-item">
+                                <span class="stack-icon">⚡</span>
+                                <span class="stack-name">Grok Code</span>
+                            </div>
+                        </div>
+
+                        <div class="features-list">
+                            <div class="feature-item">
+                                <span class="feature-icon">🎯</span>
+                                <span>Enhanced Reasoning</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">🌍</span>
+                                <span>Global Knowledge</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">🔄</span>
+                                <span>API Required</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">📊</span>
+                                <span>Usage Costs</span>
+                            </div>
+                        </div>
+
+                        <div class="performance-metrics">
+                            <div class="metric">
+                                <span class="metric-label">Response Time</span>
+                                <span class="metric-value">2-4s</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Privacy</span>
+                                <span class="metric-value">Shared</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Model Management Interface -->
+                <div class="management-interface">
+                    <h4>🔧 Model Management</h4>
+                    <div class="management-features">
+                        <div class="mgmt-feature">
+                            <span class="mgmt-icon">📥</span>
+                            <span class="mgmt-text">Download models from catalog with size/hardware info</span>
+                        </div>
+                        <div class="mgmt-feature">
+                            <span class="mgmt-icon">🗑️</span>
+                            <span class="mgmt-text">Remove unused models to free disk space</span>
+                        </div>
+                        <div class="mgmt-feature">
+                            <span class="mgmt-icon">🔄</span>
+                            <span class="mgmt-text">Switch providers instantly without restart</span>
+                        </div>
+                        <div class="mgmt-feature">
+                            <span class="mgmt-icon">🎛️</span>
+                            <span class="mgmt-text">Voice selection and TTS configuration</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TECHNICAL ARCHITECTURE SECTION -->
+        <section id="architecture" class="section alt-bg">
+            <div class="container">
+                <div class="section-header">
+                    <h2>Technical <span class="plasma-text">Architecture</span></h2>
+                    <p>Multi-threaded PyQt6 with enhanced UI framework and signal/slot architecture.</p>
+                </div>
+
+                <div class="arch-grid">
+                    <div class="arch-component">
+                        <h4>🎨 BioMech UI Thread</h4>
+                        <div class="tech-details">
+                            <p><strong>Framework:</strong> PyQt6 + Custom UI Framework</p>
+                            <p><strong>Components:</strong> Frameless windows, reactive mic, kinetic animations</p>
+                            <p><strong>Design:</strong> Golden ratio, plasma/electric blue theme</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-component">
+                        <h4>🎤 Audio Thread</h4>
+                        <div class="tech-details">
+                            <p><strong>Library:</strong> sounddevice + numpy</p>
+                            <p><strong>Format:</strong> 16kHz, mono, float32</p>
+                            <p><strong>Visualization:</strong> Real-time amplitude processing</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-component">
+                        <h4>🧠 STT Thread</h4>
+                        <div class="tech-details">
+                            <p><strong>Engine:</strong> OpenAI Whisper (base model)</p>
+                            <p><strong>Processing:</strong> Local transcription</p>
+                            <p><strong>Latency:</strong> ~2-3 seconds for 5s audio</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-component">
+                        <h4>⚡ LLM Thread</h4>
+                        <div class="tech-details">
+                            <p><strong>Runtime:</strong> Multi-provider support</p>
+                            <p><strong>Catalog:</strong> 500+ models with metadata</p>
+                            <p><strong>Agents:</strong> Intent, Action, Response (enhanced)</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-component">
+                        <h4>🔊 TTS Thread</h4>
+                        <div class="tech-details">
+                            <p><strong>Engine:</strong> pyttsx3 with voice selection</p>
+                            <p><strong>Rate:</strong> 190 WPM configurable</p>
+                            <p><strong>Voices:</strong> System voice enumeration</p>
+                        </div>
+                    </div>
+
+                    <div class="arch-component">
+                        <h4>💾 Enhanced Data Layer</h4>
+                        <div class="tech-details">
+                            <p><strong>Conversation:</strong> conversation_history.json</p>
+                            <p><strong>Memory:</strong> memory.json (key-value)</p>
+                            <p><strong>Settings:</strong> Cross-platform path resolution</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- HOME ASSISTANT SECTION -->
+        <section id="home" class="section">
+            <div class="container">
+                <div class="split-layout">
+                    <div class="content-side">
+                        <h2>Native <span class="ha-text">Home Assistant</span> Integration</h2>
+                        <p>Enhanced entity discovery and state-aware prompts for precise control.</p>
+                        <ul class="feature-list">
+                            <li><strong>Dynamic Discovery:</strong> Real-time entity fetching with refresh commands</li>
+                            <li><strong>State-Aware Prompts:</strong> Current device states injected to LLM context</li>
+                            <li><strong>Helper Management:</strong> Create/delete input_boolean, input_number, input_text</li>
+                            <li><strong>Enhanced Services:</strong> Extended device support with confirmation dialogs</li>
+                        </ul>
+                    </div>
+                    <div class="visual-side">
+                        <div class="code-window">
+                            <div class="window-header">
+                                <span class="dot red"></span><span class="dot yellow"></span><span
+                                    class="dot green"></span>
+                                <span class="title">ha_client.py (enhanced)</span>
+                            </div>
+                            <div class="code-content">
+                                <pre><span class="comment">// Enhanced entity context with states:</span>
+
+- Name: 'Living Room Light', Entity: 'light.living_room', State: 'on'
+- Name: 'Bedroom Sensor', Entity: 'sensor.temp', State: '21.5°C'
+- Name: 'Movie Time', Entity: 'input_boolean.movie_time', State: 'off'
+- Name: 'Julius iPhone', Entity: 'sensor.juliuss_iphone_battery_level', State: '65%'
+
+<span class="comment">// New helper creation via voice:</span>
+User: "Create a helper called Movie Mode"
+Intent: {"intent": "helper_create", "helper_type": "input_boolean", "helper_name": "Movie Mode"}
+Action: {"entity_id": "input_boolean.movie_mode", "service": "turn_on"}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="install" class="section cta">
+            <div class="container">
+                <h2>Initialize The Neural System</h2>
+                <div class="cli-box">
+                    <span class="prompt">$</span> ./scripts/start.sh
+                </div>
+                <p class="install-notes">Automatically installs dependencies, configures virtual environment, and launches the biomechanical interface.</p>
+            </div>
+        </section>
+
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Jarvis Neural Interface. Built for locally-hosted future.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
