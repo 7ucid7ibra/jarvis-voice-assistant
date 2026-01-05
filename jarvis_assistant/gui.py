@@ -635,13 +635,18 @@ class SettingsDialog(QDialog):
             saved_voice_id = cfg.tts_voice_id
             target_index = -1
 
+            # Add Default voice first
+            self.voice_combo.addItem("Default", "")
+            if not saved_voice_id:
+                target_index = 0
+
             selected_voices = ["Samantha", "Karen", "Daniel", "Albert", "Alice"]
 
             # Add Piper if exists
             piper_path = os.path.join(os.getcwd(), "models", "tts", "en_US-amy-medium.onnx")
             if os.path.exists(piper_path):
                 self.voice_combo.addItem("Piper (Amy) [AI]", "piper")
-                if saved_voice_id == "piper" or not saved_voice_id:
+                if saved_voice_id == "piper":
                     target_index = self.voice_combo.count() - 1
 
             for v in voices:
