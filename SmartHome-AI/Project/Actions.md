@@ -1,1 +1,0 @@
-Turn something on or off and regulate it e.g. dim [[Bulbs]].

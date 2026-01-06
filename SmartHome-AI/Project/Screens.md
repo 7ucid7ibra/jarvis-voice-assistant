@@ -1,1 +1,0 @@
-For the human to view information.

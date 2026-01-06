@@ -1,6 +1,0 @@
-- [[Bulbs]]
-- AirConditioners
-- Solaranlage
-- Car battery
-- Heater
-- 

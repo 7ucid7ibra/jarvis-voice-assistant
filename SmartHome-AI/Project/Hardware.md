@@ -1,4 +1,0 @@
-- Powerful [[Computer]] for the [[AI-Brain]]
--  [[Computer]] for the [[Home-Assistant OS]]
-- [[Wireless Communication Hub]]
-- [[Speakers]] & [[Screens]] as [[Interface]] for human machine interaction. 

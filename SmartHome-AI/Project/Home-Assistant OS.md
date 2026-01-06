@@ -1,1 +1,0 @@
-An open source operating system optimized for smart homes. I still need to learn more about this. I only did the simple setup and created this virtual switch that I controlled with my application. It looks quite cool and I think I can go down a rabbit hole with that. Many settings. But really at the end of the day I want the AI to do most of these settings.
