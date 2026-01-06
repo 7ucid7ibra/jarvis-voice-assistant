@@ -15,6 +15,7 @@ class LLMWorker(QObject):
     """
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
+    progress = pyqtSignal(str, int) # status, percentage
 
     def __init__(self):
         super().__init__()
@@ -87,37 +88,52 @@ class LLMWorker(QObject):
 
     def pull_model(self, name: str) -> Dict[str, str]:
         """
-        Pull a model via ollama CLI to avoid streaming API complexity.
+        Pull a model via Ollama API with streaming progress signals.
         """
+        url = "http://127.0.0.1:11434/api/pull"
+        payload = {"name": name, "stream": True}
+        
+        if not self._ensure_ollama_running():
+            return {"status": "error", "error": "Ollama not running"}
+            
         try:
-            result = subprocess.run(
-                ["ollama", "pull", name],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            return {"status": "success", "output": result.stdout.strip()}
-        except subprocess.CalledProcessError as e:
-            return {"status": "error", "error": e.stderr.strip() or str(e)}
-        except FileNotFoundError:
-            return {"status": "error", "error": "ollama CLI not found; install Ollama first."}
+            response = requests.post(url, json=payload, stream=True, timeout=300) # Increased timeout for large models
+            response.raise_for_status()
+            
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        data = json.loads(line)
+                        status = data.get("status", "")
+                        total = data.get("total", 0)
+                        completed = data.get("completed", 0)
+                        
+                        pct = -1
+                        if total > 0:
+                            pct = int((completed / total) * 100)
+                            status = f"{status} ({pct}%)"
+                            
+                        self.progress.emit(status, pct)
+                    except json.JSONDecodeError:
+                        continue
+            
+            self.progress.emit("Download Finished.", -1)
+            return {"status": "success"}
+        except Exception as e:
+            self.progress.emit(f"Error: {e}", -1)
+            return {"status": "error", "error": str(e)}
 
     def remove_model(self, name: str) -> Dict[str, str]:
         """
-        Remove a model via ollama CLI.
+        Remove a model via Ollama API.
         """
+        url = "http://127.0.0.1:11434/api/delete"
         try:
-            result = subprocess.run(
-                ["ollama", "rm", name],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            return {"status": "success", "output": result.stdout.strip()}
-        except subprocess.CalledProcessError as e:
-            return {"status": "error", "error": e.stderr.strip() or str(e)}
-        except FileNotFoundError:
-            return {"status": "error", "error": "ollama CLI not found; install Ollama first."}
+            resp = requests.delete(url, json={"name": name}, timeout=10)
+            resp.raise_for_status()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     def load_catalog(self) -> List[Dict[str, Any]]:
         """
@@ -196,7 +212,8 @@ class LLMWorker(QObject):
             return
 
         try:
-            response = requests.post(url, json=payload, timeout=60)
+            # Increased timeout for CPU users / slow models
+            response = requests.post(url, json=payload, timeout=300)
             response.raise_for_status()
             result = response.json()
             content = result.get("message", {}).get("content", "")

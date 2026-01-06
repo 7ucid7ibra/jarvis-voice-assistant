@@ -51,7 +51,7 @@ def get_squircle_path(rect: QRectF, radius: float, n: float = 4.0) -> QPainterPa
     path.closeSubpath()
     return path
 
-# --- 2. BioMechCasing (Refined for Glossy Light Reflection) ---
+# --- 2. BioMechCasing (Tangible 3D Edition) ---
 class BioMechCasing(QFrame):
     def __init__(self, parent=None, squircle=True):
         super().__init__(parent)
@@ -73,43 +73,49 @@ class BioMechCasing(QFrame):
         base_col = self.bg_color if hasattr(self, 'bg_color') else QColor(COLOR_CHASSIS_MID)
         
         # 1. Main Body Gradient (Top-Left Light -> Bottom-Right Shadow)
-        # Soft, pearlescent gradient
+        # Softer, radiant gradient
         grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
         grad.setColorAt(0.0, QColor("#FFFFFF")) 
-        grad.setColorAt(0.4, base_col)
-        grad.setColorAt(1.0, QColor(COLOR_CHASSIS_DARK))
+        grad.setColorAt(0.3, base_col)
+        grad.setColorAt(1.0, QColor("#B0B5BA")) # Much softer shadow
         
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(grad))
         painter.drawPath(path)
         
-        # 2. Specular Reflection (The "Gloss" look)
-        # Large white soft gloss on top
+        # 2. Specular Reflection (The "Radiance" look)
+        # Very soft, diffuse light
+        painter.save()
+        painter.setClipPath(path)
+        
         gloss_path = QPainterPath()
-        gloss_rect = QRectF(rect.x(), rect.y(), rect.width(), rect.height() * 0.5)
-        if self.squircle:
-             # Clip gloss to top half of squircle? 
-             # Simpler: Radial gradient at top left
-             pass
-             
-        gloss = QRadialGradient(rect.topLeft() + QPointF(rect.width()*0.3, rect.height()*0.3), rect.width() * 0.8)
-        gloss.setColorAt(0, QColor(255, 255, 255, 180))
+        # Broader, softer highlight
+        gloss_oval_rect = QRectF(rect.x() - rect.width()*0.2, rect.y() - rect.height()*0.1, 
+                                 rect.width()*1.4, rect.height()*0.6)
+        
+        gloss = QRadialGradient(gloss_oval_rect.center(), rect.width() * 0.8)
+        gloss.setColorAt(0, QColor(255, 255, 255, 80)) # Lower opacity for "radiance"
         gloss.setColorAt(1, QColor(255, 255, 255, 0))
         
         painter.setBrush(QBrush(gloss))
-        painter.drawPath(path)
-
-        # 3. Chrome/Plastic Edge Seam
-        stroke_path = get_squircle_path(rect.adjusted(1,1,-1,-1), 0, n=4.0) if self.squircle else QPainterPath()
-        if not self.squircle: stroke_path.addRoundedRect(rect.adjusted(1,1,-1,-1), 20, 20)
-            
-        edge_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        edge_grad.setColorAt(0, QColor(255, 255, 255, 255)) 
-        edge_grad.setColorAt(1, QColor(100, 100, 100, 100))
+        painter.drawEllipse(gloss_oval_rect)
         
-        painter.setPen(QPen(QBrush(edge_grad), 2))
+        painter.restore()
+
+        # 3. Outer Edge Highlight (Bezel Rim)
+        # Subtle, smooth radiance at edges, no sharp lines
+        edge_path = get_squircle_path(rect.adjusted(0.5, 0.5, -0.5, -0.5), 0, n=4.0) if self.squircle else QPainterPath()
+        if not self.squircle: edge_path.addRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 20, 20)
+        
+        edge_pen_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        edge_pen_grad.setColorAt(0, QColor(255, 255, 255, 150)) 
+        edge_pen_grad.setColorAt(1, QColor(255, 255, 255, 20)) 
+        
+        painter.setPen(QPen(QBrush(edge_pen_grad), 1.0)) # Thinner, softer bezel
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(stroke_path)
+        painter.drawPath(edge_path)
+
+        # Removed sharp construction seam
 
 # --- 3. Kinetic Animation Controller ---
 class KineticAnim(QPropertyAnimation):

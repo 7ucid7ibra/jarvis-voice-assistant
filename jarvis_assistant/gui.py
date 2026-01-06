@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
     QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect, 
     QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox,
-    QCheckBox, QProgressBar, QTabWidget
+    QCheckBox, QProgressBar, QTabWidget, QMessageBox
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, 
@@ -14,6 +14,9 @@ from PyQt6.QtGui import (
 )
 import threading
 import os
+import psutil
+import subprocess
+import re
 from .config import cfg, COLOR_BACKGROUND, COLOR_ACCENT_CYAN, COLOR_ACCENT_TEAL
 from .utils import logger
 from .utils import logger
@@ -239,9 +242,85 @@ class ChatBubble(QFrame):
             layout.addWidget(label)
             layout.addStretch()
 
-class SettingsDialog(QDialog):
+
+class ResourceBar(QWidget):
+    def __init__(self, label="CPU", parent=None):
+        super().__init__(parent)
+        self.setFixedSize(60, 10)
+        self.label = label
+        self.percent = 0
+        self.bg_color = QColor(0, 0, 0, 40)
+        self.bar_color = QColor(COLOR_PLASMA_CYAN) if "GPU" in label else QColor(COLOR_ELECTRIC_BLUE)
+        
+    def set_percent(self, p):
+        self.percent = max(0, min(100, p))
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw BG
+        painter.setBrush(QBrush(self.bg_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        rect = QRectF(self.rect())
+        painter.drawRoundedRect(rect, 2, 2)
+        
+        # Draw Fill
+        fill_width = rect.width() * (self.percent / 100.0)
+        fill_rect = QRectF(rect.x(), rect.y(), fill_width, rect.height())
+        painter.setBrush(QBrush(self.bar_color))
+        painter.drawRoundedRect(fill_rect, 2, 2)
+        
+        # Label text
+        painter.setPen(QPen(QColor("#555")))
+        painter.setFont(QFont("Arial", 7))
+        painter.drawText(rect.adjusted(2, -1, 0, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.label)
+
+class ResourceMonitor(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFixedSize(70, 26)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        
+        self.cpu_bar = ResourceBar("CPU", self)
+        self.gpu_bar = ResourceBar("GPU", self)
+        
+        layout.addWidget(self.cpu_bar)
+        layout.addWidget(self.gpu_bar)
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_stats)
+        self.timer.start(2000) # 2 seconds
+        
+    def update_stats(self):
+        # CPU
+        self.cpu_bar.set_percent(psutil.cpu_percent())
+        
+        # GPU (Mac specific)
+        threading.Thread(target=self._fetch_gpu, daemon=True).start()
+        
+    def _fetch_gpu(self):
+        try:
+            cmd = "ioreg -r -c IOAccelerator | grep -E 'Device Utilization %' | head -n 1"
+            match = re.search(r'"Device Utilization %"=(\d+)', res)
+            if match:
+                val = int(match.group(1))
+                self.gpu_bar.set_percent(val)
+        except:
+            pass
+
+class SettingsDialog(QDialog):
+    # Signals for thread safety
+    preview_finished = pyqtSignal()
+    model_deleted = pyqtSignal(str, bool, str) # name, success, error_msg
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.preview_finished.connect(self._restore_preview_btn)
+        self.model_deleted.connect(self._on_model_deleted)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(750, 920)
@@ -270,7 +349,12 @@ class SettingsDialog(QDialog):
         
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(30, 30)
-        close_btn.setStyleSheet(f"color: #DDD; background: transparent; border: none; font-size: 16px;")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ color: #DDD; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 16px; font-weight: bold; }}
+            QPushButton:hover {{ color: #FF6666; border-color: #FF6666; }}
+            QPushButton:pressed {{ color: #FF0000; border-color: #FF0000; }}
+        """)
         close_btn.clicked.connect(self.reject)
         
         title_layout.addWidget(title_lbl)
@@ -340,7 +424,11 @@ class SettingsDialog(QDialog):
         
         cancel_btn = QPushButton("CANCEL")
         cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(f"color: #888; font-weight: bold; border: none; padding: 10px 20px;")
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{ color: #888; font-weight: bold; border: 1px solid #999; border-radius: 6px; padding: 10px 20px; }}
+            QPushButton:hover {{ color: #FF6666; border-color: #FF6666; }}
+            QPushButton:pressed {{ color: #FF0000; border-color: #FF0000; }}
+        """)
         cancel_btn.clicked.connect(self.reject)
         
         save_btn = QPushButton("SAVE CHANGES")
@@ -368,6 +456,7 @@ class SettingsDialog(QDialog):
         self.llm_worker = LLMWorker()
         
         # Consolidation: update_ui_state will call refresh_installed_models
+        self.llm_worker.progress.connect(self._on_model_progress)
         self.update_ui_state(cfg.api_provider)
         
         # Dragging logic for frameless window
@@ -428,6 +517,16 @@ class SettingsDialog(QDialog):
         self.model_status.setStyleSheet(f"color: {COLOR_ACCENT_TEAL}; font-size: 11px;")
         layout.addWidget(self.model_status)
 
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{ background: #DDD; border: none; border-radius: 4px; }}
+            QProgressBar::chunk {{ background: {COLOR_ELECTRIC_BLUE}; border-radius: 4px; }}
+        """)
+        layout.addWidget(self.progress_bar)
+        
         # Sub-Tabs for Models
         self.model_tabs = QTabWidget()
         self.model_tabs.setStyleSheet(f"""
@@ -513,7 +612,26 @@ class SettingsDialog(QDialog):
         self._style_combo(self.voice_combo)
         layout.addWidget(QLabel("System Voice"))
         layout.addWidget(self.voice_combo)
-        
+
+        # Preview voice button
+        self.preview_btn = QPushButton("Preview Voice")
+        self.preview_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.preview_btn.clicked.connect(self._preview_voice)
+        self.preview_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                background: transparent; 
+                color: {COLOR_ELECTRIC_BLUE}; 
+                font-weight: bold; 
+                border: 1px solid {COLOR_ELECTRIC_BLUE}; 
+                border-radius: 6px; 
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{ 
+                background: rgba(86, 226, 255, 0.1); 
+            }}
+        """)
+        layout.addWidget(self.preview_btn)
+
         layout.addWidget(QLabel("Speech Rate"))
         self.rate_slider = QSlider(Qt.Orientation.Horizontal)
         self.rate_slider.setRange(100, 300)
@@ -664,6 +782,81 @@ class SettingsDialog(QDialog):
             logger.error(f"Failed to populate voices: {e}")
             self.voice_combo.clear()
 
+    def _preview_voice(self):
+        voice_id = self.voice_combo.currentData()
+        test_text = "Analysis complete. Systems nominal."
+        
+        # Visual feedback
+        original_text = self.preview_btn.text()
+        self.preview_btn.setText("playing...")
+        self.preview_btn.setEnabled(False)
+        self.preview_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                background: {COLOR_ACCENT_TEAL}; 
+                color: #000; 
+                font-weight: bold; 
+                border-radius: 6px; 
+                padding: 6px 12px;
+                border: none;
+            }}
+        """)
+        
+        def restore_btn():
+            self.preview_btn.setText(original_text)
+            self.preview_btn.setEnabled(True)
+            self.preview_btn.setStyleSheet(f"""
+                QPushButton {{ 
+                    background: transparent; 
+                    color: {COLOR_ELECTRIC_BLUE}; 
+                    font-weight: bold; 
+                    border: 1px solid {COLOR_ELECTRIC_BLUE}; 
+                    border-radius: 6px; 
+                    padding: 6px 12px;
+                }}
+                QPushButton:hover {{ 
+                    background: rgba(86, 226, 255, 0.1); 
+                }}
+            """)
+
+        def run_preview():
+            try:
+                if voice_id == "piper":
+                     # TODO: Connect to piper if needed, for now just skip or simulate
+                     time.sleep(1) 
+                else:
+                    import subprocess
+                    import platform
+                    if platform.system() == "Darwin":
+                        cmd = ["say"]
+                        if voice_id:
+                            voice_name = voice_id.split('.')[-1]
+                            cmd.extend(["-v", voice_name])
+                        cmd.append(test_text)
+                        subprocess.run(cmd, check=True)
+            except Exception as e:
+                logger.error(f"Failed to preview voice: {e}")
+            finally:
+                self.preview_finished.emit() # Emit the signal from the thread
+
+        threading.Thread(target=run_preview, daemon=True).start()
+
+    def _restore_preview_btn(self):
+        self.preview_btn.setText("Preview Voice")
+        self.preview_btn.setEnabled(True)
+        self.preview_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                background: transparent; 
+                color: {COLOR_ELECTRIC_BLUE}; 
+                font-weight: bold; 
+                border: 1px solid {COLOR_ELECTRIC_BLUE}; 
+                border-radius: 6px; 
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{ 
+                background: rgba(86, 226, 255, 0.1); 
+            }}
+        """)
+
     def update_ui_state(self, provider):
         # same logic but cleaner checks
         is_ollama = (provider == "ollama")
@@ -675,6 +868,7 @@ class SettingsDialog(QDialog):
         self.model_status.setVisible(is_ollama)
         self.api_key_edit.setVisible(is_openai_gemini)
         self.model_tabs.setVisible(is_ollama)
+        self.progress_bar.setVisible(False) # Hide progress bar when switching providers
         # We can't easily hide the layout headers without keeping refs, 
         # but for now let's just handle the inputs.
         
@@ -829,6 +1023,7 @@ class SettingsDialog(QDialog):
             del_btn.setFixedSize(36, 36)
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             del_btn.setStyleSheet("QPushButton { background: transparent; color: #CCC; border: none; font-size: 20px; } QPushButton:hover { color: #FF6666; }")
+            del_btn.clicked.connect(lambda: self.delete_model(name))
             main_layout.addWidget(del_btn)
         else:
             btn = QPushButton("GET", card)
@@ -849,12 +1044,44 @@ class SettingsDialog(QDialog):
             
         return card
     def download_model(self, name):
-        self.model_status.setText(f"Downloading {name}...")
+        self.model_status.setText(f"Starting download: {name}...")
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
         def t():
             self.llm_worker.pull_model(name)
-            QTimer.singleShot(0, lambda: self.model_status.setText("Download Complete."))
+            QTimer.singleShot(2000, lambda: self.model_status.setText(""))
+            QTimer.singleShot(2000, lambda: self.progress_bar.setVisible(False))
             QTimer.singleShot(100, self.refresh_installed_models)
         threading.Thread(target=t, daemon=True).start()
+
+    def delete_model(self, name):
+        reply = QMessageBox.question(self, "Delete Model", f"Are you sure you want to delete '{name}'?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.model_status.setText(f"Deleting {name}...")
+            def t():
+                res = self.llm_worker.remove_model(name)
+                success = (res.get("status") == "success")
+                error = res.get("error", "")
+                self.model_deleted.emit(name, success, error)
+            threading.Thread(target=t, daemon=True).start()
+
+    def _on_model_deleted(self, name, success, error):
+        if success:
+            self.model_status.setText(f"Deleted {name}.")
+        else:
+            self.model_status.setText(f"Error deleting: {error}")
+            
+        QTimer.singleShot(2000, lambda: self.model_status.setText(""))
+        QTimer.singleShot(100, self.refresh_installed_models)
+
+    def _on_model_progress(self, status, pct):
+        self.model_status.setText(status)
+        if pct >= 0:
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setValue(pct)
+        else:
+            self.progress_bar.setVisible(False)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -863,17 +1090,39 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.default_height = 650
         self.collapsed_height = 420
-        self.resize(500, self.default_height)
+        self.resize(560, self.default_height + 60) # Slightly larger for margins
         
-        central = BioMechCasing(squircle=True)
-        self.setCentralWidget(central)
-        # Layout
-        layout = QVBoxLayout(central)
+        # 1. Transparent Container to hold the Casing + Shadow
+        container = QWidget()
+        container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setCentralWidget(container)
+        
+        # 2. Layout with margins for the shadow
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(30, 30, 30, 50) # Space for shadow
+        
+        # 3. The Actionable Casing
+        self.casing = BioMechCasing(squircle=True)
+        container_layout.addWidget(self.casing)
+        
+        # Add deep drop shadow for floating effect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(50)
+        shadow.setXOffset(0)
+        shadow.setYOffset(15)
+        shadow.setColor(QColor(0, 0, 0, 140)) # Slightly softer shadow
+        self.casing.setGraphicsEffect(shadow)
+        
+        # Layout inside the casing
+        layout = QVBoxLayout(self.casing)
         layout.setSpacing(10)
-        layout.setContentsMargins(50, 60, 50, 50) # Safe margins for Squircle 
+        layout.setContentsMargins(30, 40, 30, 30) # Internal margins
         
         # Header
         header = QHBoxLayout()
+        # Add side spacing for squircle corners
+        header.setContentsMargins(35, 10, 35, 0)
+        
         title = QLabel("JARVIS")
         title.setFont(QFont("Impact", 24))
         title.setStyleSheet(f"color: #444; letter-spacing: 2px;")
@@ -899,12 +1148,21 @@ class MainWindow(QMainWindow):
         
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(30, 30)
-        close_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px;")
+        close_btn.setStyleSheet("""
+            QPushButton { color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px; }
+            QPushButton:hover { color: #FF6666; border-color: #FF6666; }
+            QPushButton:pressed { color: #FF0000; border-color: #FF0000; }
+        """)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close)
         
         header.addWidget(title)
         header.addStretch()
+        
+        self.res_monitor = ResourceMonitor()
+        header.addWidget(self.res_monitor)
+        header.addSpacing(5)
+
         header.addWidget(self.toggle_history_btn)
         header.addWidget(self.mute_btn)
         header.addWidget(settings_btn)
