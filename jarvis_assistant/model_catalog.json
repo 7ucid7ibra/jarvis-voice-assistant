@@ -25,6 +25,66 @@
       "note": "Better reasoning; slower on CPU-only."
     },
     {
+      "name": "deepseek-r1:1.5b",
+      "size": "1.1 GB",
+      "hardware": "Very CPU friendly",
+      "note": "DeepSeek's distilled fast reasoning model."
+    },
+    {
+      "name": "deepseek-r1:7b",
+      "size": "4.7 GB",
+      "hardware": "Fast CPU or GPU",
+      "note": "Balanced reasoning model."
+    },
+    {
+      "name": "deepseek-r1:8b",
+      "size": "4.9 GB",
+      "hardware": "Fast CPU or GPU",
+      "note": "Llama-3-distilled reasoning model."
+    },
+    {
+      "name": "deepseek-coder:6.7b",
+      "size": "3.8 GB",
+      "hardware": "Fast CPU or GPU",
+      "note": "Specialized for coding tasks."
+    },
+    {
+      "name": "phi4",
+      "size": "9.1 GB",
+      "hardware": "16GB+ RAM or GPU",
+      "note": "Microsoft's strong 14B reasoning model."
+    },
+    {
+      "name": "gemma2:2b",
+      "size": "1.6 GB",
+      "hardware": "Very CPU friendly",
+      "note": "Google's efficient edge model."
+    },
+    {
+      "name": "gemma2:9b",
+      "size": "5.4 GB",
+      "hardware": "8GB+ RAM / GPU",
+      "note": "High quality general purpose model."
+    },
+    {
+      "name": "llama3.2:3b",
+      "size": "2.0 GB",
+      "hardware": "CPU friendly",
+      "note": "Meta's edge-optimized text model."
+    },
+    {
+      "name": "mistral-nemo",
+      "size": "7.1 GB",
+      "hardware": "12GB+ RAM or GPU",
+      "note": "New 12B standard from Mistral/NVIDIA."
+    },
+    {
+      "name": "neural-chat",
+      "size": "4.1 GB",
+      "hardware": "Standard CPU/GPU",
+      "note": "Intel-optimized 7B model."
+    },
+    {
       "name": "mistral:7b",
       "size": "4.1 GB",
       "hardware": "Fast CPU or GPU recommended",

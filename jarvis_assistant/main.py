@@ -11,7 +11,8 @@ from .llm_client import LLMWorker
 from .tts import TTSWorker
 from .ha_client import HomeAssistantClient
 from .memory import MemoryManager
-from .utils import logger
+from .config import cfg
+from .utils import logger, extract_json
 import json
 import time
 from typing import Any
@@ -174,6 +175,7 @@ class JarvisController(QObject):
         super().__init__()
         self.app = QApplication(sys.argv)
         self.window = MainWindow()
+        self.window.controller = self # Inject ref for settings
         self.conversation = Conversation()
         self.ha_client = HomeAssistantClient()
         self.ha_entities = self.ha_client.get_relevant_entities()
@@ -186,56 +188,89 @@ class JarvisController(QObject):
         self.stt_worker = STTWorker()
         self.llm_worker = LLMWorker()
         self.tts_worker = TTSWorker()
-        self.memory_manager = MemoryManager()
-        # self.wake_word_worker = WakeWordWorker() # Removed
-        self.pending_action = None
         
+        # Profile-aware initialization
+        self.init_profile_data()
+
         # Threads
         self.stt_thread = QThread()
         self.llm_thread = QThread()
         self.tts_thread = QThread()
-        # self.wake_word_thread = QThread() # Removed
-        
+
         # Move workers
         self.stt_worker.moveToThread(self.stt_thread)
         self.llm_worker.moveToThread(self.llm_thread)
         self.tts_worker.moveToThread(self.tts_thread)
-        # self.wake_word_worker.moveToThread(self.wake_word_thread) # Removed
-        
+
         # Connect Driver Signals to Worker Slots
         self.request_stt.connect(self.stt_worker.transcribe)
-        # self.request_llm.connect(self.llm_worker.generate_reply) # Removed: generate_reply no longer exists
+        self.request_llm.connect(self.llm_worker.generate)
         self.request_tts.connect(self.tts_worker.speak)
-        
+
         # Connect Worker Signals to Controller Slots
         self.audio_recorder.finished.connect(self.stt_worker.transcribe)
         self.stt_worker.finished.connect(self.handle_stt_finished)
         self.stt_worker.error.connect(self.handle_error)
-        
+
         self.llm_worker.finished.connect(self.handle_llm_response)
         self.llm_worker.error.connect(self.handle_error)
-        
+
         self.tts_worker.started.connect(self.handle_tts_started)
         self.tts_worker.finished.connect(self.handle_tts_finished)
-        
+
         # UI Signals
         self.window.mic_btn.clicked.connect(self.handle_mic_click)
         self.window.chat_input.returnPressed.connect(self.handle_text_input)
-        
+
         # Start Threads
         self.stt_thread.start()
         self.llm_thread.start()
         self.tts_thread.start()
+
+        # Load conversation into UI
+        # Load conversation into UI
+        self.window.clear_chat()
+        for msg in self.conversation.messages:
+            self.window.add_message(msg.content, msg.role == "user")
+
+        self.window.set_status("Idle")
         
-        # Init
+        self.pending_action = None
+
+    def init_profile_data(self):
+        profile = cfg.current_profile
+        logger.info(f"Initializing profile: {profile}")
+        
+        mem_file = f"memory_{profile}.json"
+        hist_file = f"history_{profile}.json"
+        
+        self.memory_manager = MemoryManager(memory_file=mem_file)
+        self.conversation = Conversation(history_file=hist_file)
         self.conversation.load()
+        
+    def switch_profile(self, new_profile):
+        if new_profile == cfg.current_profile:
+            return
+            
+        logger.info(f"Switching profile to: {new_profile}")
+        cfg.current_profile = new_profile
+        cfg.save()
+        
+        # Reload subsystems
+        self.init_profile_data()
+        
+        # Refresh UI
+        # Refresh UI
+        self.window.clear_chat()
         for msg in self.conversation.messages:
             self.window.add_message(msg.content, msg.role == "user")
         
-        self.window.set_status("Idle")
+        self.window.set_status(f"Profile: {new_profile}")
+        self.pending_action = None
         self.window.show()
 
     def run(self):
+        self.window.show()
         sys.exit(self.app.exec())
 
     def _helper_payload(self, helper_type: str, value):
@@ -425,7 +460,7 @@ class JarvisController(QObject):
         
         if self.current_state == "intent":
             try:
-                data = json.loads(response)
+                data = extract_json(response)
                 self.current_intent = data
 
                 # Voice help intent
@@ -545,14 +580,14 @@ class JarvisController(QObject):
                     
             except Exception as e:
                 logger.error(f"Intent parsing failed: {e}")
-                # Fallback to conversation
                 self.current_intent = {"intent": "conversation"}
-                self.current_action_taken = None
+                # Provide feedback instead of silent failure
+                self.current_action_taken = {"error": "I couldn't understand that command. Please rephrasing."}
                 self.start_response_agent()
 
         elif self.current_state == "action":
             try:
-                action = json.loads(response)
+                action = extract_json(response)
                 # Execute Action
                 if action and action.get("service"):
                     # Validate Service
@@ -563,8 +598,45 @@ class JarvisController(QObject):
                     else:
                         self.window.set_status("Executing...")
                         try:
+                            # 1. Verification: Normalize entity_id to list
+                            target_ids = action["entity_id"]
+                            if isinstance(target_ids, str):
+                                target_ids = [target_ids]
+                            
+                            # 2. Capture initial states
+                            initial_states = {}
+                            for eid in target_ids:
+                                initial_states[eid] = self.ha_client.get_entity_state(eid).get("state")
+                                
+                            # 3. Call Service
                             self.ha_client.call_service(action["domain"], action["service"], {"entity_id": action["entity_id"]})
-                            self.current_action_taken = action
+                            
+                            # 4. Wait brief checks
+                            time.sleep(0.5) 
+                            
+                            # 5. Verify outcomes
+                            verified = True
+                            final_states = {}
+                            for eid in target_ids:
+                                new_state = self.ha_client.get_entity_state(eid).get("state", "unknown")
+                                final_states[eid] = new_state
+                                
+                                expected = None
+                                if action["service"] == "turn_on": expected = "on"
+                                elif action["service"] == "turn_off": expected = "off"
+                                elif action["service"] == "toggle": 
+                                    expected = "off" if initial_states.get(eid) == "on" else "on"
+                                
+                                if expected and new_state != expected:
+                                    logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
+                                    verified = False
+                            
+                            # 6. Report result
+                            result = action.copy()
+                            result["verified"] = verified
+                            result["final_states"] = final_states
+                            self.current_action_taken = result
+                            
                         except Exception as e:
                             logger.error(f"HA Call failed: {e}")
                             self.current_action_taken = {"error": str(e)}
@@ -595,7 +667,11 @@ class JarvisController(QObject):
         memory_context = self.memory_manager.get_all_context()
         
         response_agent = ResponseAgent()
-        messages = [{"role": "system", "content": response_agent.get_system_prompt(memory_context)}]
+        messages = [{"role": "system", "content": response_agent.get_system_prompt(
+            memory_context=memory_context,
+            entities_context=self.ha_entities,
+            capabilities=self.describe_capabilities()
+        )}]
         
         # Add conversation history (last 10 messages)
         history = self.conversation.get_ollama_messages()[-10:]

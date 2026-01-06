@@ -64,7 +64,9 @@ class IntentAgent(BaseAgent):
             "User: 'Create a helper named Movie Time' -> {\"intent\": \"helper_create\", \"helper_type\": \"input_boolean\", \"helper_name\": \"Movie Time\", \"action\": \"create_helper\"}\n"
             "User: 'Delete the Movie Time helper' -> {\"intent\": \"helper_delete\", \"helper_name\": \"Movie Time\", \"action\": \"delete_helper\"}\n"
             "User: 'Remind me to buy milk tomorrow at 5pm' -> {\"intent\": \"todo_add\", \"todo_title\": \"buy milk\", \"todo_due\": \"2026-01-05T17:00:00\", \"action\": \"add_todo\"}\n"
-            "User: 'Remove buy milk from my reminders' -> {\"intent\": \"todo_remove\", \"todo_title\": \"buy milk\", \"action\": \"remove_todo\"}"
+            "User: 'Remove buy milk from my reminders' -> {\"intent\": \"todo_remove\", \"todo_title\": \"buy milk\", \"action\": \"remove_todo\"}\n\n"
+            "CRITICAL: You MUST output ONLY a valid JSON object. No explanations, no markdown, no extra text.\n"
+            "Start your response with { and end with }."
         )
 
 class ActionAgent(BaseAgent):
@@ -87,14 +89,16 @@ class ActionAgent(BaseAgent):
             "CRITICAL RULES:\n"
             "- You MUST use ONLY these services: 'turn_on', 'turn_off', 'toggle'.\n"
             "- Do NOT invent services like 'set', 'dim', 'color' unless explicitly supported (currently NOT supported).\n"
-            "- If the user asks for something impossible (e.g., 'set to 50%'), return empty JSON: {}"
+            "- If the user asks for something impossible (e.g., 'set to 50%'), return empty JSON: {}\n\n"
+            "CRITICAL: You MUST output ONLY a valid JSON object. No explanations, no markdown, no extra text.\n"
+            "Start your response with { and end with }."
         )
 
 class ResponseAgent(BaseAgent):
     """
     Generates a natural language response.
     """
-    def get_system_prompt(self, memory_context: str = "") -> str:
+    def get_system_prompt(self, memory_context: str = "", entities_context: str = "", capabilities: str = "") -> str:
         lang_instruction = "You speak in short conversational paragraphs, in English or German, matching the user."
         if cfg.language == "en":
             lang_instruction = "You MUST speak in English, regardless of the user's language."
@@ -102,8 +106,10 @@ class ResponseAgent(BaseAgent):
             lang_instruction = "You MUST speak in German (Deutsch), regardless of the user's language."
 
         return (
-            "You are a helpful Voice Assistant. Your job is to respond to the user.\n"
+            f"You are {cfg.assistant_name}, a voice-controlled Smart Home Assistant.\n"
             f"{lang_instruction}\n\n"
+            f"Your Capabilities:\n{capabilities}\n\n"
+            f"Available Devices:\n{entities_context}\n\n"
             "Memory & Context:\n"
             f"{memory_context}\n"
             "IMPORTANT: The 'User Facts' listed above describe the USER, not you. If a fact says 'my favorite color', it means the USER'S favorite color.\n\n"
@@ -112,8 +118,9 @@ class ResponseAgent(BaseAgent):
             "- 'Action Result' tells you EXACTLY what happened. If it says 'None', NO action was taken.\n"
             "- CRITICAL: Do NOT claim to have performed an action unless 'Action Result' confirms it.\n"
             "- If 'Action Result' is None, answer the user's question or ask one brief clarifying question only if absolutely needed. Do NOT apologize unless there was an actual error.\n"
-            "- If 'Action Result' contains a successful action (e.g., 'turn_on'), you MUST confirm it in a short, natural sentence (e.g., 'Turned it off.').\n"
-            "- If 'Action Result' contains an error, state it briefly and suggest the next concrete step (e.g., 'Couldn't turn it off: entity not found. Tell me the device name.').\n"
+            "- 'Action Result' may include 'verified': true/false. If verified=False, you MUST admit the failure (e.g. 'I tried, but the device didn't respond.').\n"
+            "- If 'Action Result' is successful and verified, confirm it simply (e.g., 'Turned it off.').\n"
+            "- If 'Action Result' contains an error, state it briefly and suggest the next concrete step (e.g., 'Couldn't turn it off: entity not found.').\n"
             "- If Intent is 'memory_read': Look at 'User Facts'. If the answer is there, say it. If NOT, say 'I don't recall that.' Do NOT guess.\n"
             "- Keep replies short and conversational by default. Provide more detail only if the user explicitly asks for an explanation.\n"
             "- Do NOT echo or describe 'System Context' or raw JSON. Never show the Action Result JSON to the user.\n"

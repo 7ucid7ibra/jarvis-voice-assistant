@@ -83,19 +83,32 @@ class TTSWorker(QObject):
             logger.error(f"Fallback TTS init failed: {e}")
 
     def speak(self, text: str):
+        logger.info(f"TTS Request: '{text}' | Vol: {cfg.tts_volume} | Voice: {cfg.tts_voice_id}")
         if not text:
+            # logger.warning("TTS: Empty text")
             return
         
         self.started.emit()
 
         if cfg.tts_volume == 0.0:
+            logger.info("TTS: Muted (volume 0.0)")
             self.finished.emit()
             return
 
         if self.engine is None:
             self.init_engine()
         
-        if self.use_piper and self.engine:
+        # STRICT CHECK: Only use Piper if selected OR if no voice is selected and Piper is available
+        # If user selected a system voice (e.g. "com.apple..."), DO NOT use Piper.
+        use_piper_for_this_request = False
+        if self.use_piper:
+            if cfg.tts_voice_id == "piper":
+                use_piper_for_this_request = True
+            elif not cfg.tts_voice_id:
+                # Default to Piper if available and no specific voice set
+                use_piper_for_this_request = True
+        
+        if use_piper_for_this_request:
             try:
                 # Piper synthesize to wav file
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
@@ -122,9 +135,22 @@ class TTSWorker(QObject):
         try:
             if platform.system() == "Darwin":
                 cmd = ["say"]
-                if cfg.tts_voice_id:
-                    voice_name = cfg.tts_voice_id.split('.')[-1]
-                    cmd.extend(["-v", voice_name])
+                if cfg.tts_voice_id and cfg.tts_voice_id != "piper":
+                    # Extract voice name if it's a full ID like "com.apple.speech.synthesis.voice.Alex"
+                    # But 'say -v' expects the name (e.g. "Alex") or ID. ID often works better for specific ones.
+                    # We'll try just passing the ID if it looks like one, or name.
+                    # cfg.tts_voice_id comes from QComboBox data.
+                    # System voices usually: "com.apple.speech.synthesis.voice.Daniel"
+                    # say -v ? shows names.
+                    # But subprocess calls to 'say -v ID' might not work, usually 'say -v Name'
+                    # Let's try to extract the Name from the ID if possible, or just pass it if it's a simple name.
+                    # Fallback: Many IDs end in .Name (e.g. .Daniel).
+                    voice_arg = cfg.tts_voice_id
+                    if "." in voice_arg:
+                        voice_arg = voice_arg.split('.')[-1]
+                    
+                    cmd.extend(["-v", voice_arg])
+                
                 cmd.append(text)
                 subprocess.run(cmd)
             else:

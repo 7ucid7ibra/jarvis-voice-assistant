@@ -39,6 +39,14 @@ class HomeAssistantClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_entity_state(self, entity_id: str) -> dict:
+        url = f"{self.base_url}/api/states/{entity_id}"
+        resp = requests.get(url, headers=self._headers(), timeout=5)
+        if resp.status_code == 404:
+            return {"state": "unknown"}
+        resp.raise_for_status()
+        return resp.json()
+
     def delete_entity(self, entity_id: str) -> dict:
         """
         Attempt to delete an entity via HA API. Note: not all entities are deletable via API.

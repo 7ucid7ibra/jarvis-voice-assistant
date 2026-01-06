@@ -12,10 +12,13 @@ DEFAULT_WAKE_WORD_ENABLED = False
 DEFAULT_WAKE_WORD = "jarvis"
 DEFAULT_HA_URL = "http://192.168.188.126:8123"
 DEFAULT_HA_TOKEN = ""  # normally provided via env var
+DEFAULT_ASSISTANT_NAME = "JARVIS"
 DEFAULT_LANGUAGE = None  # None = auto, "en" = English, "de" = German
 DEFAULT_API_PROVIDER = "ollama"
 DEFAULT_API_KEY = ""
 DEFAULT_TODO_ENTITY = "todo.shopping_list"
+DEFAULT_PROFILE = "default"
+DEFAULT_PROFILES = ["default"]
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -152,6 +155,31 @@ class Config:
     @todo_entity.setter
     def todo_entity(self, value: str) -> None:
         self._settings["todo_entity"] = value
+
+    @property
+    def assistant_name(self) -> str:
+        return self._settings.get("assistant_name", DEFAULT_ASSISTANT_NAME)
+
+    @assistant_name.setter
+    def assistant_name(self, value: str) -> None:
+        self._settings["assistant_name"] = value.upper() # Enforce uppercase for title style
+
+    @property
+    def current_profile(self) -> str:
+        return self._settings.get("current_profile", DEFAULT_PROFILE)
+
+    @current_profile.setter
+    def current_profile(self, value: str) -> None:
+        self._settings["current_profile"] = value
+
+    @property
+    def profiles(self) -> list:
+        return self._settings.get("profiles", DEFAULT_PROFILES)
+
+    @profiles.setter
+    def profiles(self, value: list) -> None:
+        self._settings["profiles"] = value
+
     
     def save(self):
         try:

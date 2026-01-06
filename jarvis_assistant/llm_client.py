@@ -20,6 +20,11 @@ class LLMWorker(QObject):
     def __init__(self):
         super().__init__()
         self.tried_start_ollama = False
+        self._cancel_requested = False
+
+    def cancel_download(self):
+        """Request cancellation of current download."""
+        self._cancel_requested = True
 
     def generate(self, messages: list[dict], format: str = "json"):
         """
@@ -97,6 +102,7 @@ class LLMWorker(QObject):
             return {"status": "error", "error": "Ollama not running"}
             
         try:
+            self._cancel_requested = False 
             response = requests.post(url, json=payload, stream=True, timeout=300) # Increased timeout for large models
             response.raise_for_status()
             
@@ -116,6 +122,11 @@ class LLMWorker(QObject):
                         self.progress.emit(status, pct)
                     except json.JSONDecodeError:
                         continue
+                
+                # Check cancellation flag
+                if self._cancel_requested:
+                    self.progress.emit("Download Cancelled.", -1)
+                    return {"status": "cancelled"}
             
             self.progress.emit("Download Finished.", -1)
             return {"status": "success"}
@@ -306,29 +317,52 @@ class LLMWorker(QObject):
 
     def _generate_opencode(self, messages: list[dict], format: str):
         """
-        OpenCode Grok (openai-compatible) without requiring API key.
+        OpenCode models share endpoints with different providers.
+        Use model-specific routing so non-OpenAI-compatible models (e.g. minimax) work.
         """
-        url = "https://opencode.ai/zen/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json"
-        }
-        # If user provides a key anyway, respect it
+        model = cfg.ollama_model or "grok-code"
+        headers = {"Content-Type": "application/json"}
         if cfg.api_key:
             headers["Authorization"] = f"Bearer {cfg.api_key}"
 
-        payload = {
-            "model": cfg.ollama_model or "grok-code",
-            "messages": messages
-        }
-        
-        if format == "json":
-            payload["response_format"] = {"type": "json_object"}
+        # Decide endpoint + payload shape based on model family
+        anthropic_models = {"minimax-m2.1-free", "claude-sonnet-4", "claude-3-5-haiku", "claude-haiku-4-5"}
+        if model in anthropic_models:
+            url = "https://opencode.ai/zen/v1/messages"
+            sys_msgs = [m["content"] for m in messages if m.get("role") == "system"]
+            conv = []
+            for m in messages:
+                role = m.get("role")
+                if role == "system":
+                    continue
+                if role not in ("user", "assistant"):
+                    continue
+                conv.append({"role": role, "content": [{"type": "text", "text": m.get("content", "")}]})
+            payload: Dict[str, Any] = {
+                "model": model,
+                "messages": conv,
+                "max_tokens": 512,  # required by anthropic-compatible API
+            }
+            if sys_msgs:
+                payload["system"] = "\n\n".join(sys_msgs)
+        else:
+            url = "https://opencode.ai/zen/v1/chat/completions"
+            payload = {
+                "model": model,
+                "messages": messages,
+            }
+            if format == "json":
+                payload["response_format"] = {"type": "json_object"}
 
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            resp = requests.post(url, headers=headers, json=payload, timeout=120)  # GLM and others can be slow
             resp.raise_for_status()
             data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            if model in anthropic_models:
+                parts = data.get("content", [])
+                content = "".join([p.get("text", "") for p in parts if isinstance(p, dict)])
+            else:
+                content = data["choices"][0]["message"]["content"]
             self.finished.emit(content)
         except Exception as e:
             self.error.emit(f"OpenCode Error: {e}")

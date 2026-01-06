@@ -37,7 +37,7 @@ def get_squircle_path(rect: QRectF, radius: float, n: float = 4.0) -> QPainterPa
     
     points = []
     import math
-    steps = 60
+    steps = 200  # High resolution for smooth curves
     
     for i in range(steps + 1):
         theta = (2 * math.pi * i) / steps
@@ -59,7 +59,8 @@ class BioMechCasing(QFrame):
         
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         
         rect = QRectF(self.rect())
         rect.adjust(2, 2, -2, -2) 

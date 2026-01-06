@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect, 
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect,
     QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox,
-    QCheckBox, QProgressBar, QTabWidget, QMessageBox
+    QCheckBox, QProgressBar, QTabWidget, QMessageBox, QInputDialog
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, 
@@ -10,7 +10,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor, QPainter, QPen, QBrush, QRadialGradient, 
-    QLinearGradient, QFont, QPainterPath
+    QLinearGradient, QFont, QPainterPath, QFontMetrics
 )
 import threading
 import os
@@ -41,7 +41,9 @@ class MicButton(QWidget):
         self._glow_factor = 0.0
         self._core_size = 50.0
         self._voice_amplitude = 0.0
+        self._voice_amplitude = 0.0
         self._spin_angle = 0.0
+        self.is_hovering = False
         
         self.breather = BreathingAnim(self)
         self.breather.value_changed.connect(self._on_breathe)
@@ -90,11 +92,10 @@ class MicButton(QWidget):
             self._glow_factor = (math.sin(time.time() * 10) + 1) / 2
             self.update()
         elif self.state == self.STATE_SPEAKING:
-            import random
-            # Simulate voice amplitude with noise-like jitter
-            target = random.uniform(0.1, 0.9)
-            # Smoothly interpolate towards target
-            self._voice_amplitude = self._voice_amplitude * 0.7 + target * 0.3
+            # Pulse glow like thinking, but in blue (no rotation)
+            import math
+            import time
+            self._glow_factor = (math.sin(time.time() * 10) + 1) / 2
             self.update()
 
     def set_state(self, state):
@@ -126,6 +127,14 @@ class MicButton(QWidget):
     def mousePressEvent(self, event):
         self.clicked.emit()
 
+    def enterEvent(self, event):
+        self.is_hovering = True
+        self.update()
+
+    def leaveEvent(self, event):
+        self.is_hovering = False
+        self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -152,6 +161,8 @@ class MicButton(QWidget):
             core_col = QColor(COLOR_AMBER_ALERT) 
         elif self.state == self.STATE_LISTENING:
             core_col = QColor(COLOR_PLASMA_CYAN)
+        elif self.state == self.STATE_IDLE and self.is_hovering:
+            core_col = QColor(COLOR_ELECTRIC_BLUE)
             
         # 3a. Thinking Animation: Rotating Pulse Ring
         if self.state == self.STATE_THINKING:
@@ -166,18 +177,6 @@ class MicButton(QWidget):
             painter.drawEllipse(QPointF(0,0), r, r)
             painter.restore()
             
-        # 3b. Speaking Animation: Reactive Sound Waves
-        if self.state == self.STATE_SPEAKING:
-            for i in range(3):
-                wave_r = self._core_size * (1.1 + (i * 0.3) + (self._voice_amplitude * 0.5))
-                opacity = int(200 * (1 - (i/3.0)) * self._voice_amplitude)
-                if opacity < 0: opacity = 0
-                w_col = QColor(COLOR_ELECTRIC_BLUE)
-                w_col.setAlpha(opacity)
-                painter.setPen(QPen(w_col, 2))
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawEllipse(center, wave_r, wave_r)
-
         # Core Glow
         glow_radius = self._core_size * (1.2 + self._glow_factor * 0.5)
         glow = QRadialGradient(center, glow_radius)
@@ -276,6 +275,68 @@ class ResourceBar(QWidget):
         painter.setPen(QPen(QColor("#555")))
         painter.setFont(QFont("Arial", 7))
         painter.drawText(rect.adjusted(2, -1, 0, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.label)
+            
+class InteractiveTitleLabel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.text = cfg.assistant_name
+        self.setFixedSize(140, 40)
+        self.mouse_pos = QPoint(-100, -100)
+        self.setMouseTracking(True)
+        self.letters = list(self.text)
+        self.font = QFont("Impact", 24)
+
+    def update_text(self):
+        self.text = cfg.assistant_name
+        self.letters = list(self.text)
+        self.update()
+        
+    def mouseMoveEvent(self, event):
+        self.mouse_pos = event.pos()
+        self.update()
+        
+    def leaveEvent(self, event):
+        self.mouse_pos = QPoint(-100, -100)
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setFont(self.font)
+        
+        # Base settings
+        start_x = 0
+        gap = 4 # Pixel gap between letters
+        fm = QFontMetrics(self.font)
+        
+        current_x = start_x
+        
+        for i, char in enumerate(self.letters):
+            char_width = fm.horizontalAdvance(char)
+            
+            # center of this letter for hit testing
+            center_x = current_x + (char_width / 2)
+            y = 30 # Baseline
+            center_y = y - 10
+            
+            dist = ((self.mouse_pos.x() - center_x)**2 + (self.mouse_pos.y() - center_y)**2)**0.5
+            
+            # Base color
+            base_col = QColor("#444")
+            
+            # Glow effect - DISCRETE logic for individual letters
+            threshold = 20.0 # Slightly larger threshold for better feel
+            
+            if dist < threshold:
+                col = QColor(COLOR_ELECTRIC_BLUE)
+            else:
+                col = base_col
+                
+            painter.setPen(QPen(col))
+            painter.drawText(int(current_x), int(y), char)
+            
+            # Advance X position
+            current_x += char_width + gap
 
 class ResourceMonitor(QWidget):
     def __init__(self, parent=None):
@@ -317,13 +378,16 @@ class SettingsDialog(QDialog):
     preview_finished = pyqtSignal()
     model_deleted = pyqtSignal(str, bool, str) # name, success, error_msg
 
-    def __init__(self, parent=None):
+    model_deleted = pyqtSignal(str, bool, str) # name, success, error_msg
+
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
+        self.controller = controller
         self.preview_finished.connect(self._restore_preview_btn)
         self.model_deleted.connect(self._on_model_deleted)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.resize(750, 920)
+        self.resize(900, 850)
         
         # Main Layout container (Solid)
         from .ui_framework import BioMechCasing
@@ -372,6 +436,7 @@ class SettingsDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("background: transparent;")
         
         # Internal Content Widget
@@ -414,6 +479,7 @@ class SettingsDialog(QDialog):
         self.catalog_models = []
 
         # --- Build Pages ---
+        self._init_general_page()
         self._init_llm_page()
         self._init_speech_page()
         self._init_ha_page()
@@ -475,6 +541,55 @@ class SettingsDialog(QDialog):
     def mouseReleaseEvent(self, event):
         self.old_pos = None
 
+    def _init_general_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Assistant Name Section
+        layout.addWidget(self._make_header("Assistant Name"))
+        self.name_edit = QLineEdit(cfg.assistant_name)
+        self.name_edit.setPlaceholderText("Enter name (e.g., JARVIS, David)...")
+        self._style_input(self.name_edit)
+        layout.addWidget(self.name_edit)
+        
+        name_hint = QLabel("The name displayed in the header and used in AI responses.")
+        name_hint.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(name_hint)
+
+        # Profile Section
+        layout.addSpacing(10)
+        layout.addWidget(self._make_header("Session Profile"))
+        
+        prof_layout = QHBoxLayout()
+        self.profile_combo = QComboBox()
+        self._style_combo(self.profile_combo)
+        self.profile_combo.addItems(cfg.profiles)
+        self.profile_combo.setCurrentText(cfg.current_profile)
+        
+        self.add_prof_btn = QPushButton("+")
+        self.add_prof_btn.setFixedSize(30, 30)
+        self.add_prof_btn.clicked.connect(self._add_profile)
+        self._style_mini_btn(self.add_prof_btn)
+        
+        self.del_prof_btn = QPushButton("🗑")
+        self.del_prof_btn.setFixedSize(30, 30)
+        self.del_prof_btn.clicked.connect(self._del_profile)
+        self._style_mini_btn(self.del_prof_btn, destructive=True)
+        
+        prof_layout.addWidget(self.profile_combo)
+        prof_layout.addWidget(self.add_prof_btn)
+        prof_layout.addWidget(self.del_prof_btn)
+        layout.addLayout(prof_layout)
+        
+        prof_hint = QLabel("Switching profiles instantly reloads memory and chat history.")
+        prof_hint.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(prof_hint)
+        
+        layout.addStretch()
+        self.tabs.addTab(page, "General")
+
     def _init_llm_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -517,6 +632,8 @@ class SettingsDialog(QDialog):
         self.model_status.setStyleSheet(f"color: {COLOR_ACCENT_TEAL}; font-size: 11px;")
         layout.addWidget(self.model_status)
 
+        progress_layout = QHBoxLayout()
+        
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setFixedHeight(8)
@@ -525,7 +642,18 @@ class SettingsDialog(QDialog):
             QProgressBar {{ background: #DDD; border: none; border-radius: 4px; }}
             QProgressBar::chunk {{ background: {COLOR_ELECTRIC_BLUE}; border-radius: 4px; }}
         """)
-        layout.addWidget(self.progress_bar)
+        
+        self.cancel_dl_btn = QPushButton("✕")
+        self.cancel_dl_btn.setFixedSize(24, 24)
+        self.cancel_dl_btn.setVisible(False)
+        self.cancel_dl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cancel_dl_btn.setToolTip("Cancel Download")
+        self.cancel_dl_btn.setStyleSheet("QPushButton { color: #888; border: 1px solid #CCC; border-radius: 12px; font-weight: bold; background: white; } QPushButton:hover { color: red; border-color: red; }")
+        self.cancel_dl_btn.clicked.connect(self._cancel_download)
+
+        progress_layout.addWidget(self.progress_bar)
+        progress_layout.addWidget(self.cancel_dl_btn)
+        layout.addLayout(progress_layout)
         
         # Sub-Tabs for Models
         self.model_tabs = QTabWidget()
@@ -873,8 +1001,19 @@ class SettingsDialog(QDialog):
         # but for now let's just handle the inputs.
         
         if is_opencode:
+             # Align with opencode model ids from /zen docs
+             # Use addItem with (display_name, data=actual_id)
              self.model_edit.clear()
-             self.model_edit.addItems(["grok-code", "big-pickle", "minimax", "glm-4.7"])
+             opencode_models = [("grok-code", "grok-code"), ("big-pickle", "big-pickle"), ("minimax", "minimax-m2.1-free"), ("glm-4.7", "glm-4.7-free")]
+             for display, model_id in opencode_models:
+                 self.model_edit.addItem(display, model_id)
+             # Find and set saved model
+             saved_model = cfg.ollama_model
+             idx = self.model_edit.findData(saved_model)
+             if idx >= 0:
+                 self.model_edit.setCurrentIndex(idx)
+             else:
+                 self.model_edit.setCurrentIndex(0) # Default to first
         elif is_ollama:
              self.refresh_installed_models()
         else:
@@ -884,9 +1023,17 @@ class SettingsDialog(QDialog):
 
     def save_settings(self):
         logger.info("Saving settings...")
+        
+        # Check for profile switch
+        new_profile = self.profile_combo.currentText()
+        should_switch = (new_profile != cfg.current_profile)
+        
+        cfg.assistant_name = self.name_edit.text()
         cfg.api_provider = self.provider_combo.currentText()
         cfg.api_key = self.api_key_edit.text()
-        cfg.ollama_model = self.model_edit.currentText()
+        # Use data if available (for opencode friendly names), else fall back to text
+        model_data = self.model_edit.currentData()
+        cfg.ollama_model = model_data if model_data else self.model_edit.currentText()
         cfg.whisper_model = self.whisper_combo.currentText()
         
         l_text = self.language_combo.currentText()
@@ -903,7 +1050,74 @@ class SettingsDialog(QDialog):
         
         cfg.save()
         logger.info(f"Settings saved to: {cfg.tts_voice_id}")
+        
+        if should_switch and self.controller:
+             try:
+                 self.controller.switch_profile(new_profile)
+             except Exception as e:
+                 logger.error(f"Could not switch profile: {e}")
+        
         self.accept()
+
+    def _style_mini_btn(self, btn, destructive=False):
+        color = "#FF6666" if destructive else COLOR_ELECTRIC_BLUE
+        hover = "#FF0000" if destructive else "#0066DD"
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {color};
+                border: 1px solid {color};
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                background: {color}22;
+                border-color: {hover};
+                color: {hover};
+            }}
+        """)
+
+    def _add_profile(self):
+        name, ok = QInputDialog.getText(self, "New Profile", "Enter profile name (e.g., 'Bobby'):")
+        if ok and name:
+            clean_name = name.strip().lower().replace(" ", "_")
+            if clean_name in cfg.profiles:
+                QMessageBox.warning(self, "Exists", "Profile already exists.")
+                return
+            
+            # Update config immediately
+            profs = cfg.profiles
+            profs.append(clean_name)
+            cfg.profiles = profs
+            
+            self.profile_combo.addItem(clean_name)
+            self.profile_combo.setCurrentText(clean_name)
+    
+    def _del_profile(self):
+        curr = self.profile_combo.currentText()
+        if curr == "default":
+            QMessageBox.warning(self, "Error", "Cannot delete default profile.")
+            return
+            
+        reply = QMessageBox.question(self, "Confirm", f"Delete profile '{curr}' and all its memory?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            # Cleanup files
+            try:
+                os.remove(f"memory_{curr}.json")
+                os.remove(f"history_{curr}.json")
+            except: pass
+            
+            profs = cfg.profiles
+            if curr in profs: profs.remove(curr)
+            cfg.profiles = profs
+            
+            # Refresh UI
+            self.profile_combo.clear()
+            self.profile_combo.addItems(profs)
+            self.profile_combo.setCurrentText("default")
 
     # --- Model Helpers (Simplified for the new layout) ---
     def _clear_layout(self, layout):
@@ -956,7 +1170,7 @@ class SettingsDialog(QDialog):
              self.catalog_models = self.llm_worker.load_catalog()
         
         matches = [m for m in self.catalog_models if text in m.get("name", "").lower()]
-        for m in matches[:5]: # Limit to 5
+        for m in matches: # Show all matches
              card = self._create_model_card(m, installed=False)
              self.catalog_container.addWidget(card)
         self.catalog_container.addStretch() # Keep at top
@@ -1047,12 +1261,17 @@ class SettingsDialog(QDialog):
         self.model_status.setText(f"Starting download: {name}...")
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
+        self.cancel_dl_btn.setVisible(True) # Show cancel btn
+        
         def t():
             self.llm_worker.pull_model(name)
-            QTimer.singleShot(2000, lambda: self.model_status.setText(""))
-            QTimer.singleShot(2000, lambda: self.progress_bar.setVisible(False))
-            QTimer.singleShot(100, self.refresh_installed_models)
+            # Cleanup happen in _on_model_progress or here if needed, but progress handles visibility
         threading.Thread(target=t, daemon=True).start()
+
+    def _cancel_download(self):
+        self.model_status.setText("Cancelling...")
+        self.llm_worker.cancel_download()
+        self.cancel_dl_btn.setEnabled(False) # Prevent double click
 
     def delete_model(self, name):
         reply = QMessageBox.question(self, "Delete Model", f"Are you sure you want to delete '{name}'?",
@@ -1080,8 +1299,18 @@ class SettingsDialog(QDialog):
         if pct >= 0:
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(pct)
+            self.cancel_dl_btn.setVisible(True)
+            self.cancel_dl_btn.setEnabled(True)
         else:
+            # Done or Error or Cancelled
             self.progress_bar.setVisible(False)
+            self.cancel_dl_btn.setVisible(False)
+            self.cancel_dl_btn.setEnabled(True)
+            
+            # If successful or cancelled, refresh logic handled here or via timer
+            if "Finished" in status or "Cancelled" in status:
+                QTimer.singleShot(2000, lambda: self.model_status.setText(""))
+                QTimer.singleShot(100, self.refresh_installed_models)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -1089,7 +1318,7 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.default_height = 650
-        self.collapsed_height = 420
+        self.collapsed_height = 230
         self.resize(560, self.default_height + 60) # Slightly larger for margins
         
         # 1. Transparent Container to hold the Casing + Shadow
@@ -1123,40 +1352,109 @@ class MainWindow(QMainWindow):
         # Add side spacing for squircle corners
         header.setContentsMargins(35, 10, 35, 0)
         
-        title = QLabel("JARVIS")
-        title.setFont(QFont("Impact", 24))
-        title.setStyleSheet(f"color: #444; letter-spacing: 2px;")
+        header.setContentsMargins(35, 10, 35, 0)
+        
+        # Replaced custom widget for glowing letters
+        self.title_label = InteractiveTitleLabel()
         
         settings_btn = QPushButton("⚙")
         settings_btn.setFixedSize(30, 30)
-        settings_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px;")
         settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px; 
+            }}
+            QPushButton:hover {{ 
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #BBB, stop:1 #EEE);
+                border-top: 2px solid #777;
+                border-left: 2px solid #777;
+                border-bottom: 2px solid #FFF;
+                border-right: 2px solid #FFF;
+            }}
+            QPushButton:pressed {{ 
+                background: #AAA;
+                padding-top: 2px;
+                padding-left: 2px;
+            }}
+        """)
         settings_btn.clicked.connect(self.open_settings)
 
         self.toggle_history_btn = QPushButton("Hide Chat")
         self.toggle_history_btn.setFixedHeight(28)
-        self.toggle_history_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 12px; padding: 2px 8px;")
         self.toggle_history_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_history_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 12px; padding: 2px 8px;
+            }}
+            QPushButton:hover {{ 
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #BBB, stop:1 #EEE);
+                border-top: 2px solid #777;
+                border-left: 2px solid #777;
+                border-bottom: 2px solid #FFF;
+                border-right: 2px solid #FFF;
+                padding: 0px 6px; /* Adjust padding to compensate for border */
+            }}
+            QPushButton:pressed {{ 
+                background: #AAA;
+                padding-top: 4px; /* Adjust padding to simulate press */
+                padding-left: 8px;
+            }}
+        """)
         self.toggle_history_btn.clicked.connect(self.toggle_history)
         
         self.mute_btn = QPushButton("🔊")
         self.mute_btn.setFixedSize(28, 28)
-        self.mute_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
         self.mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mute_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;
+            }}
+            QPushButton:hover {{ 
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #BBB, stop:1 #EEE);
+                border-top: 2px solid #777;
+                border-left: 2px solid #777;
+                border-bottom: 2px solid #FFF;
+                border-right: 2px solid #FFF;
+            }}
+            QPushButton:pressed {{ 
+                background: #AAA;
+                padding-top: 1px;
+                padding-left: 1px;
+            }}
+        """)
         self.mute_btn.clicked.connect(self.toggle_mute)
-        self.is_muted = False
+        
+        # Initialize mute state from config
+        self.is_muted = (cfg.tts_volume == 0.0)
+        if self.is_muted:
+            self.mute_btn.setText("🔇")
+            self.mute_btn.setStyleSheet("color: #FF6666; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
         
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(30, 30)
-        close_btn.setStyleSheet("""
-            QPushButton { color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px; }
-            QPushButton:hover { color: #FF6666; border-color: #FF6666; }
-            QPushButton:pressed { color: #FF0000; border-color: #FF0000; }
-        """)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px; 
+            }}
+            QPushButton:hover {{ 
+                color: #FF6666; 
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FF9999, stop:1 #FFF0F0);
+                border-top: 2px solid #CC0000;
+                border-left: 2px solid #CC0000;
+                border-bottom: 2px solid #FFF;
+                border-right: 2px solid #FFF;
+            }}
+            QPushButton:pressed {{ 
+                color: #FF0000; 
+                background: #FFCCCC;
+                padding-top: 2px;
+                padding-left: 2px;
+            }}
+        """)
         close_btn.clicked.connect(self.close)
         
-        header.addWidget(title)
+        header.addWidget(self.title_label)
         header.addStretch()
         
         self.res_monitor = ResourceMonitor()
@@ -1168,7 +1466,9 @@ class MainWindow(QMainWindow):
         header.addWidget(settings_btn)
         header.addWidget(close_btn)
         layout.addLayout(header)
-        layout.addStretch() # Center spacer
+        header.addWidget(close_btn)
+        layout.addLayout(header)
+        # removed addStretch here to let screen_frame expand
 
         # Screen Area (Inset LCD with Gloss Overlay)
         self.screen_frame = QFrame()
@@ -1207,6 +1507,8 @@ class MainWindow(QMainWindow):
         
         # Control Deck
         deck_layout = QVBoxLayout()
+        deck_layout.setContentsMargins(0, 0, 0, 5)
+        deck_layout.setSpacing(5)
         
         self.chat_input = QLineEdit()
         self.chat_input.setPlaceholderText("Direct Interface...")
@@ -1237,10 +1539,14 @@ class MainWindow(QMainWindow):
         deck_layout.addWidget(self.status_label)
         
         layout.addLayout(deck_layout)
-        layout.addStretch() # Bottom spacer
+        layout.addLayout(deck_layout)
+        # layout.addStretch() # Removed to compact bottom
         
-        # Dragging logic
+        # Dragging & Resizing logic
         self.old_pos = None
+        self.resizing_y = False
+        self.resize_margin = 12 # Pixels from bottom to trigger resize
+        self.setMouseTracking(True) # Required for hover cursor update
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
@@ -1252,52 +1558,98 @@ class MainWindow(QMainWindow):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.old_pos = event.globalPosition().toPoint()
+            # Check for resize attempt logic
+            if self.history_visible and event.position().y() > (self.height() - self.resize_margin):
+                self.resizing_y = True
+                self.old_pos = event.globalPosition().toPoint()
+            else:
+                self.resizing_y = False
+                self.old_pos = event.globalPosition().toPoint()
 
     def mouseMoveEvent(self, event):
-        if self.old_pos:
-            delta = event.globalPosition().toPoint() - self.old_pos
-            self.move(self.pos() + delta)
-            self.old_pos = event.globalPosition().toPoint()
+        # 1. Hover Update (No buttons pressed)
+        if not event.buttons():
+            if self.history_visible and event.position().y() > (self.height() - self.resize_margin):
+                self.setCursor(Qt.CursorShape.SizeVerCursor)
+            else:
+                self.unsetCursor() 
+                
+        # 2. Drag / Resize
+        elif event.buttons() == Qt.MouseButton.LeftButton and self.old_pos:
+            global_pos = event.globalPosition().toPoint()
+            delta = global_pos - self.old_pos
+            
+            if self.resizing_y:
+                new_h = int(max(self.collapsed_height, min(1200, self.height() + delta.y())))
+                self.resize(self.width(), new_h)
+                self.default_height = new_h # Remember this size
+                self.old_pos = global_pos
+            else:
+                # Normal move
+                self.move(self.pos() + delta)
+                self.old_pos = global_pos
 
     def mouseReleaseEvent(self, event):
         self.old_pos = None
+        self.resizing_y = False
+        self.unsetCursor()
 
     def add_message(self, text, is_user):
         bubble = ChatBubble(text, is_user)
         self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, bubble)
         QTimer.singleShot(100, lambda: self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum()))
 
+    def clear_chat(self):
+        """Clear all chat bubbles from the scroll layout."""
+        while self.scroll_layout.count() > 1:
+            item = self.scroll_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
     def open_settings(self):
-        dlg = SettingsDialog(self)
+        # Ensure we have a controller ref
+        ctrl = getattr(self, "controller", None)
+        dlg = SettingsDialog(self, controller=ctrl)
         dlg.exec()
+        # Refresh title in case user changed the name
+        self.title_label.update_text()
 
     def toggle_history(self):
         self.history_visible = not self.history_visible
-        
         target_height = self.default_height if self.history_visible else self.collapsed_height
         
-        # Animate Geometry
-        self.anim = QPropertyAnimation(self, b"geometry")
-        self.anim.setDuration(500)
-        self.anim.setEasingCurve(QEasingCurve.Type.OutQuint)
-        
-        start_rect = self.geometry()
-        # Keep center or just grow down? 
-        # Usually growing down/up feels better for pods.
-        end_rect = QRect(start_rect.x(), start_rect.y(), start_rect.width(), target_height)
-        
-        self.anim.setStartValue(start_rect)
-        self.anim.setEndValue(end_rect)
+        start_h = self.height()
+        import time
+        start_time = time.time()
+        duration = 0.25 # 250ms fixed duration for snappy feel
         
         if self.history_visible:
             self.screen_frame.setVisible(True)
             self.toggle_history_btn.setText("Hide Chat")
         else:
-            self.anim.finished.connect(lambda: self.screen_frame.setVisible(False))
             self.toggle_history_btn.setText("Show Chat")
- 
-        self.anim.start()
+            
+        def anim_loop():
+            now = time.time()
+            elapsed = now - start_time
+            progress = elapsed / duration
+            
+            if progress >= 1.0:
+                self.resize(self.width(), target_height)
+                if not self.history_visible:
+                    self.screen_frame.setVisible(False)
+                return
+
+            # Simple easing (OutQuint equivalent-ish) could be nice, but linear for now or simple ease out
+            # Ease Out Cubic: 1 - pow(1 - progress, 3)
+            ease = 1 - pow(1 - progress, 3)
+            
+            new_h = int(start_h + ((target_height - start_h) * ease))
+            self.resize(self.width(), new_h)
+            
+            QTimer.singleShot(16, anim_loop)
+        
+        anim_loop()
 
     def toggle_mute(self):
         """Toggle TTS mute state"""

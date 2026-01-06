@@ -16,3 +16,41 @@ def setup_logging():
     return logging.getLogger("Jarvis")
 
 logger = setup_logging()
+
+import json
+import re
+
+def extract_json(text: str) -> dict:
+    """
+    Robustly extract JSON from a string, handling markdown code blocks and raw text.
+    """
+    if not text:
+        raise ValueError("Empty response")
+        
+    text = text.strip()
+    
+    # 1. Try direct parsing
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+        
+    # 2. Extract from markdown code blocks (```json ... ```)
+    # This regex handles ```json { ... } ``` and ``` { ... } ```
+    match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            pass
+            
+    # 3. Last resort: Find the first outermost curly braces
+    # This assumes the JSON object is reasonably well-formed starting with {
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+            
+    raise ValueError("No valid JSON found in response")
