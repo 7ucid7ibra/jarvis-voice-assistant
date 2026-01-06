@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }, observerOptions);
 
-    const elementsToAnimate = document.querySelectorAll('.flow-step, .ui-component, .model-card, .arch-component, .hero-content');
+    const elementsToAnimate = document.querySelectorAll('.flow-step, .ui-component, .model-card, .arch-component, .hero-content, .highlight-card, .provider-card');
     elementsToAnimate.forEach((el, index) => {
         el.style.opacity = '0';
         el.style.transform = 'translateY(20px)';

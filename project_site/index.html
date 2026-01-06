@@ -24,6 +24,7 @@
         <div class="nav-container">
             <div class="logo">JARVIS<span class="core-glow">●</span>NEURAL</div>
             <ul class="nav-links">
+                <li><a href="#whatsnew">What's New</a></li>
                 <li><a href="#logic">Agent Logic</a></li>
                 <li><a href="#architecture">Architecture</a></li>
                 <li><a href="#ui">UI Framework</a></li>
@@ -58,6 +59,62 @@
                     <div class="rotating-ring ring-1"></div>
                     <div class="rotating-ring ring-2"></div>
                     <div class="core-glow-effect"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- WHAT'S NEW SECTION -->
+        <section id="whatsnew" class="section alt-bg highlight-section">
+            <div class="container">
+                <div class="section-header">
+                    <h2>New In This Build</h2>
+                    <p>Updated to match the latest app code: provider routing, profiles, confirmations, and smarter Home Assistant flows.</p>
+                </div>
+                <div class="highlight-grid">
+                    <div class="highlight-card">
+                        <div class="badge">Providers</div>
+                        <h3>OpenCode + Cloud Switcher</h3>
+                        <p>Instantly swap between local Ollama and cloud providers without restarting.</p>
+                        <ul class="pill-list">
+                            <li>OpenCode Zen: grok-code, big-pickle, minimax-m2.1-free, glm-4.7-free</li>
+                            <li>OpenAI: gpt-4o-mini with JSON mode</li>
+                            <li>Gemini: gemini-2.5-flash for structured replies</li>
+                        </ul>
+                        <p class="note">OpenCode routes OpenAI-compatible and Anthropic-style models automatically.</p>
+                    </div>
+
+                    <div class="highlight-card">
+                        <div class="badge">Profiles</div>
+                        <h3>Profile-Aware Memory</h3>
+                        <p>Switch profiles in Settings to load separate chat history and memory stores instantly.</p>
+                        <ul class="pill-list">
+                            <li>Per-profile history_x.json + memory_x.json</li>
+                            <li>Assistant name customization per profile</li>
+                            <li>Status update when profiles change</li>
+                        </ul>
+                    </div>
+
+                    <div class="highlight-card">
+                        <div class="badge">Safety</div>
+                        <h3>Confirmation Gate</h3>
+                        <p>Action and helper flows now pause for verbal confirmation before changing Home Assistant.</p>
+                        <ul class="pill-list">
+                            <li>Helper create/delete prompts</li>
+                            <li>Todo add/remove confirmations</li>
+                            <li>Explicit yes/no parsing in the pipeline</li>
+                        </ul>
+                    </div>
+
+                    <div class="highlight-card">
+                        <div class="badge">UX</div>
+                        <h3>Model & Voice Controls</h3>
+                        <p>Model browser with hardware hints plus TTS voice preview inside Settings.</p>
+                        <ul class="pill-list">
+                            <li>Searchable catalog + install/remove</li>
+                            <li>Provider-aware API key fields</li>
+                            <li>One-click “Preview Voice” playback</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </section>
@@ -212,7 +269,7 @@
             <div class="container">
                 <div class="section-header">
                     <h2>Multi-Provider <span class="plasma-text">AI Support</span></h2>
-                    <p>Choose your intelligence backend. Local privacy or cloud power - switch instantly.</p>
+                    <p>Choose your intelligence backend. Local privacy or cloud power - switch instantly with OpenCode, OpenAI, Gemini, or Ollama.</p>
                 </div>
 
                 <div class="model-showcase">
@@ -299,15 +356,15 @@
                         <div class="tech-stack">
                             <div class="stack-item">
                                 <span class="stack-icon">🚀</span>
-                                <span class="stack-name">Gemini 2.0</span>
+                                <span class="stack-name">Gemini 2.5 Flash</span>
                             </div>
                             <div class="stack-item">
                                 <span class="stack-icon">🧬</span>
-                                <span class="stack-name">GPT-4o</span>
+                                <span class="stack-name">GPT-4o Mini</span>
                             </div>
                             <div class="stack-item">
                                 <span class="stack-icon">⚡</span>
-                                <span class="stack-name">Grok Code</span>
+                                <span class="stack-name">OpenCode (Grok/Big Pickle)</span>
                             </div>
                         </div>
 
@@ -362,6 +419,63 @@
                         <div class="mgmt-feature">
                             <span class="mgmt-icon">🎛️</span>
                             <span class="mgmt-text">Voice selection and TTS configuration</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="provider-matrix">
+                    <h4>🌐 Provider Matrix</h4>
+                    <div class="provider-grid">
+                        <div class="provider-card local">
+                            <div class="provider-head">
+                                <span class="provider-label">Local</span>
+                                <h5>Ollama</h5>
+                            </div>
+                            <p>Default qwen2.5:0.5b tuned for Intel Macs. Works offline with catalog search and install.</p>
+                            <ul class="pill-list">
+                                <li>No API key required</li>
+                                <li>JSON mode supported</li>
+                                <li>Model catalog + delete</li>
+                            </ul>
+                        </div>
+
+                        <div class="provider-card opencode">
+                            <div class="provider-head">
+                                <span class="provider-label">OpenCode</span>
+                                <h5>Zen Chat</h5>
+                            </div>
+                            <p>Direct to https://opencode.ai/zen — free Grok Code, Big Pickle, MiniMax M2.1 Free, GLM-4.7-Free.</p>
+                            <ul class="pill-list">
+                                <li>No key needed (respect key if set)</li>
+                                <li>Auto-routes OpenAI vs Anthropic payloads</li>
+                                <li>JSON responses supported</li>
+                            </ul>
+                        </div>
+
+                        <div class="provider-card openai">
+                            <div class="provider-head">
+                                <span class="provider-label">OpenAI</span>
+                                <h5>GPT-4o Mini</h5>
+                            </div>
+                            <p>Cloud fallback with JSON response format for structured agents.</p>
+                            <ul class="pill-list">
+                                <li>API key required</li>
+                                <li>Smart JSON response_format</li>
+                                <li>Fast, low-cost default</li>
+                            </ul>
+                        </div>
+
+                        <div class="provider-card gemini">
+                            <div class="provider-head">
+                                <span class="provider-label">Gemini</span>
+                                <h5>2.5 Flash</h5>
+                            </div>
+                            <p>Google Gemini endpoint with system_instruction mapping and JSON mime type support.</p>
+                            <ul class="pill-list">
+                                <li>API key required</li>
+                                <li>JSON MIME responses</li>
+                                <li>System prompt injection</li>
+                            </ul>
                         </div>
                     </div>
                 </div>
@@ -445,6 +559,7 @@
                             <li><strong>Dynamic Discovery:</strong> Real-time entity fetching with refresh commands</li>
                             <li><strong>State-Aware Prompts:</strong> Current device states injected to LLM context</li>
                             <li><strong>Helper Management:</strong> Create/delete input_boolean, input_number, input_text</li>
+                            <li><strong>Voice Reminders:</strong> Add/remove todo items with confirmations</li>
                             <li><strong>Enhanced Services:</strong> Extended device support with confirmation dialogs</li>
                         </ul>
                     </div>
