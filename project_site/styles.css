@@ -2033,31 +2033,78 @@ footer p {
         grid-template-columns: 1fr;
     }
 
-    .deep-dive-content {
-        padding: 0 1rem 1.5rem;
-    }
-
     .code-window {
         max-width: 100%;
+        margin: 1.5rem auto;
         overflow-x: auto;
+        display: block;
     }
 
     .code-content {
         padding: 1rem;
-        font-size: 0.7rem;
-        /* Further reduced for code readability on narrow screens */
+        font-size: 0.72rem;
     }
 
-    /* Fix card clipping by ensuring no min-widths or wide padding is pushing them out */
+    /* Fix card clipping and alignment */
     .deep-dive {
-        width: 100%;
-        margin-left: 0;
-        margin-right: 0;
+        display: block;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 1.5rem 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    .deep-dive summary {
+        padding: 1rem 1.2rem !important;
     }
 
     .deep-dive-content {
-        padding: 0 0.8rem 1.5rem;
-        /* Reduced padding */
+        padding: 0 0.8rem 1.5rem !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+}
+
+/* Specific fixes for ultra-narrow screens (iPhone SE, etc.) */
+@media (max-width: 480px) {
+    .container {
+        padding: 0 0.75rem !important;
+    }
+
+    .deep-dive summary {
+        padding: 1rem 0.8rem !important;
+        gap: 0.5rem;
+    }
+
+    .summary-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 1.1rem;
+    }
+
+    .summary-text {
+        font-size: 1rem;
+    }
+
+    .deep-dive-content {
+        padding: 0 0.5rem 1.5rem !important;
+    }
+
+    .code-content {
+        white-space: pre-wrap !important;
+        /* Wrap code on tiny screens */
+        word-break: break-word;
+        font-size: 0.7rem;
+        padding: 0.8rem;
+    }
+
+    .code-header {
+        padding: 0.6rem 0.8rem;
+    }
+
+    .code-title {
+        font-size: 0.7rem;
     }
 }
 

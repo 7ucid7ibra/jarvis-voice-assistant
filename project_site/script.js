@@ -26,32 +26,72 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Tooltip Logic (Restored) ---
+    // --- Tooltip Logic (Improved for Mobile & Interaction) ---
     const terms = document.querySelectorAll('.tech-term');
     const tooltipPopup = document.createElement('div');
     tooltipPopup.className = 'tooltip-popup';
     document.body.appendChild(tooltipPopup);
 
+    function showTooltip(term) {
+        const desc = term.getAttribute('data-desc');
+        tooltipPopup.textContent = desc;
+        tooltipPopup.classList.add('show');
+
+        // Position it
+        const rect = term.getBoundingClientRect();
+        const popupRect = tooltipPopup.getBoundingClientRect();
+
+        let top = rect.top - popupRect.height - 10 + window.scrollY;
+        let left = rect.left + (rect.width / 2) - (popupRect.width / 2) + window.scrollX;
+
+        // Prevent tooltip from going off-screen (left/right)
+        if (left < 10) left = 10;
+        if (left + popupRect.width > window.innerWidth - 10) {
+            left = window.innerWidth - popupRect.width - 10;
+        }
+
+        tooltipPopup.style.top = `${top}px`;
+        tooltipPopup.style.left = `${left}px`;
+    }
+
+    function hideTooltip() {
+        tooltipPopup.classList.remove('show');
+    }
+
     terms.forEach(term => {
+        // Desktop - only show on hover if it's NOT a touch interaction recently
         term.addEventListener('mouseenter', () => {
-            const desc = term.getAttribute('data-desc');
-            tooltipPopup.textContent = desc;
-            tooltipPopup.classList.add('show');
-
-            const rect = term.getBoundingClientRect();
-            const popupRect = tooltipPopup.getBoundingClientRect();
-
-            // Position above the term
-            let top = rect.top - popupRect.height - 10 + window.scrollY;
-            let left = rect.left + (rect.width / 2) - (popupRect.width / 2) + window.scrollX;
-
-            tooltipPopup.style.top = `${top}px`;
-            tooltipPopup.style.left = `${left}px`;
+            if (window.matchMedia("(hover: hover)").matches) {
+                showTooltip(term);
+            }
         });
 
         term.addEventListener('mouseleave', () => {
-            tooltipPopup.classList.remove('show');
+            if (window.matchMedia("(hover: hover)").matches) {
+                hideTooltip();
+            }
         });
+
+        // Click for both (but handles mobile toggle cleanly)
+        term.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            // If we are on mobile (no hover) or it was a tap
+            if (!window.matchMedia("(hover: hover)").matches || e.pointerType === 'touch') {
+                if (tooltipPopup.classList.contains('show')) {
+                    hideTooltip();
+                } else {
+                    showTooltip(term);
+                }
+            }
+        });
+    });
+
+    // Hide tooltip when clicking anywhere else
+    document.addEventListener('click', (e) => {
+        if (!e.target.classList.contains('tech-term')) {
+            hideTooltip();
+        }
     });
 
 
