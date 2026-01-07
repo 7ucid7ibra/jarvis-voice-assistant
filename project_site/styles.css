@@ -1865,13 +1865,15 @@ footer {
     border-radius: 12px;
     padding: 2rem 3rem;
     display: inline-block;
-    margin: 1rem 0 2rem 3rem;
+    margin: 1rem 0 2rem 0;
+    /* Removed fixed 3rem left margin */
     vertical-align: middle;
     font-family: 'Consolas', monospace;
     font-size: 1.2rem;
     color: var(--plasma-cyan);
     box-shadow: 0 0 30px rgba(55, 230, 255, 0.2);
     text-align: left;
+    max-width: 100%;
 }
 
 .prompt {
@@ -1967,8 +1969,60 @@ footer p {
         text-align: center;
     }
 
+    .hero-btns {
+        justify-content: center;
+    }
+
     .hero-visual {
         margin-top: 3rem;
+    }
+
+    .jarvis-gui {
+        width: 100%;
+        max-width: 320px;
+        /* Reduced from 420px */
+        height: auto;
+        min-height: 480px;
+        /* Adjusted */
+        transform: scale(0.95);
+        /* Subtle scale down to ensure it feels smaller */
+        transform-origin: center top;
+    }
+
+    .ctrl-btn {
+        display: none;
+        /* Hide chat toggle on mobile to save space */
+    }
+
+    .bar-track {
+        width: 30px;
+        /* Shortened bars for mobile */
+    }
+
+    .gui-stats {
+        margin-left: 8px;
+        /* Reduced margin */
+    }
+
+    .container {
+        padding: 0 1rem;
+        /* Reduced horizontal padding for more content space */
+    }
+
+    .cta {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .install-steps {
+        margin: 0 0 2rem 0;
+    }
+
+    .cli-box {
+        margin: 1rem auto 2rem;
+        padding: 1.5rem 2rem;
+        font-size: 1rem;
     }
 
     .model-showcase {
@@ -1977,6 +2031,33 @@ footer p {
 
     .management-features {
         grid-template-columns: 1fr;
+    }
+
+    .deep-dive-content {
+        padding: 0 1rem 1.5rem;
+    }
+
+    .code-window {
+        max-width: 100%;
+        overflow-x: auto;
+    }
+
+    .code-content {
+        padding: 1rem;
+        font-size: 0.7rem;
+        /* Further reduced for code readability on narrow screens */
+    }
+
+    /* Fix card clipping by ensuring no min-widths or wide padding is pushing them out */
+    .deep-dive {
+        width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .deep-dive-content {
+        padding: 0 0.8rem 1.5rem;
+        /* Reduced padding */
     }
 }
 
