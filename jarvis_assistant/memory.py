@@ -3,8 +3,10 @@ import os
 from typing import Dict, List, Optional
 
 class MemoryManager:
-    def __init__(self, memory_file: str = "memory.json"):
+    def __init__(self, memory_file: str = os.path.join("memory", "memory.json")):
         self.memory_file = memory_file
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
         self.facts: Dict[str, str] = {}
         self.load()
 

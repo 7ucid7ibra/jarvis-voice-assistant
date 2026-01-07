@@ -18,9 +18,11 @@ class Message:
             self.timestamp = time.time()
 
 class Conversation:
-    def __init__(self, history_file: str = "conversation_history.json"):
+    def __init__(self, history_file: str = os.path.join("history", "conversation_history.json")):
         self.messages: List[Message] = []
         self.history_file = history_file
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.history_file), exist_ok=True)
     # System prompt is now handled by agents
 
 

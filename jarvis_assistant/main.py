@@ -1,4 +1,5 @@
 import sys
+import os
 import threading
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSlot, QObject, pyqtSignal
@@ -241,8 +242,12 @@ class JarvisController(QObject):
         profile = cfg.current_profile
         logger.info(f"Initializing profile: {profile}")
         
-        mem_file = f"memory_{profile}.json"
-        hist_file = f"history_{profile}.json"
+        # Ensure directories exist
+        os.makedirs("memory", exist_ok=True)
+        os.makedirs("history", exist_ok=True)
+        
+        mem_file = os.path.join("memory", f"memory_{profile}.json")
+        hist_file = os.path.join("history", f"history_{profile}.json")
         
         self.memory_manager = MemoryManager(memory_file=mem_file)
         self.conversation = Conversation(history_file=hist_file)
