@@ -282,6 +282,39 @@ class TTSWorker(QObject):
 
         self.finished.emit()
 
+    def speak_ack(self, text: str):
+        """Lightweight TTS for acknowledgements (no UI state signals)."""
+        logger.info(f"TTS Ack: '{text}' | Vol: {cfg.tts_volume} | Voice: {cfg.tts_voice_id}")
+        if not text or cfg.tts_volume == 0.0:
+            return
+        requested_piper_voice = self._get_piper_voice_id()
+        use_piper = False
+        if requested_piper_voice:
+            self._ensure_piper_models(requested_piper_voice, background=True)
+            if self.use_piper and os.path.exists(self.piper_model_path or ""):
+                use_piper = True
+
+        if use_piper:
+            try:
+                if requested_piper_voice != self.piper_voice_id:
+                    self.piper_voice_id = requested_piper_voice
+                    self._set_piper_paths(requested_piper_voice)
+                    self.engine = None
+                    self.init_engine()
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
+                    temp_path = temp_wav.name
+                self._synthesize_piper(text, temp_path)
+                subprocess.run(["afplay", temp_path])
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+                return
+            except Exception as e:
+                logger.error(f"Piper ack failed: {e}. Falling back to system say.")
+
+        self._speak_fallback(text)
+
     def _speak_fallback(self, text):
         try:
             if platform.system() == "Darwin":

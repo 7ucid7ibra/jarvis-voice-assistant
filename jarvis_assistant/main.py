@@ -2,7 +2,7 @@ import sys
 import os
 import threading
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThread, pyqtSlot, QObject, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSlot, QObject, pyqtSignal, QTimer
 
 from .gui import MainWindow, MicButton
 from .conversation import Conversation
@@ -17,6 +17,8 @@ from .utils import logger, extract_json
 import json
 import time
 from typing import Any
+import re
+import unicodedata
 
 class JarvisApp:
     def __init__(self):
@@ -167,6 +169,7 @@ class JarvisController(QObject):
     request_stt = pyqtSignal(object)
     request_llm = pyqtSignal(list)
     request_tts = pyqtSignal(str)
+    request_tts_ack = pyqtSignal(str)
     
     def open_settings(self):
         dlg = SettingsDialog(self)
@@ -211,6 +214,7 @@ class JarvisController(QObject):
         self.audio_recorder.wake_word_chunk.connect(self.wake_word_stt.transcribe)
         self.request_llm.connect(self.llm_worker.generate)
         self.request_tts.connect(self.tts_worker.speak)
+        self.request_tts_ack.connect(self.tts_worker.speak_ack)
 
         # Connect Worker Signals to Controller Slots
         self.audio_recorder.finished.connect(self.stt_worker.transcribe)
@@ -245,6 +249,18 @@ class JarvisController(QObject):
         
         self.pending_action = None
         self._wake_word_active = False
+        self._ack_spoken = False
+        self._action_pending = False
+        self._ack_stage = None
+        self._ack_start_time = 0.0
+        self._ack_index = 0
+        self._ack_schedule = [3000, 15000, 39000]
+        self._ack_timer = QTimer(self)
+        self._ack_timer.setSingleShot(True)
+        self._ack_timer.timeout.connect(self._on_ack_timeout)
+        self._llm_timeout = QTimer(self)
+        self._llm_timeout.setSingleShot(True)
+        self._llm_timeout.timeout.connect(self._on_llm_timeout)
         self._start_wake_word_if_enabled()
 
     def _start_wake_word_if_enabled(self):
@@ -316,6 +332,68 @@ class JarvisController(QObject):
             return payload
         # input_boolean default
         return {}
+
+    def _parse_entities(self) -> list[dict[str, str]]:
+        entities = []
+        for line in (self.ha_entities or "").splitlines():
+            line = line.strip()
+            match = re.match(r"- Name: '(.+?)', Entity: '(.+?)', State: '(.+?)'$", line)
+            if not match:
+                continue
+            name, entity_id, state = match.groups()
+            domain = entity_id.split(".")[0] if "." in entity_id else ""
+            entities.append(
+                {
+                    "name": name,
+                    "entity_id": entity_id,
+                    "state": state,
+                    "domain": domain,
+                }
+            )
+        return entities
+
+    def _build_input_number_action(self) -> dict | None:
+        text = (self.current_user_text or "").lower()
+        value = None
+        match = re.search(r"(-?\d+(?:\.\d+)?)", text)
+        if match:
+            raw = match.group(1)
+            value = float(raw)
+            if value.is_integer():
+                value = int(value)
+        else:
+            if any(tok in text for tok in ["off", "aus", "zero", "null"]):
+                value = 0
+        if value is None:
+            return None
+
+        target_hint = ""
+        if isinstance(self.current_intent, dict):
+            target_hint = (self.current_intent.get("target") or "").lower()
+
+        entities = [e for e in self._parse_entities() if e["domain"] == "input_number"]
+        candidates = []
+        if target_hint:
+            for ent in entities:
+                if target_hint in ent["name"].lower() or target_hint in ent["entity_id"].lower():
+                    candidates.append(ent)
+        if not candidates and ("heater" in text or "heizung" in text):
+            for ent in entities:
+                name_lower = ent["name"].lower()
+                entity_lower = ent["entity_id"].lower()
+                if "heater" in name_lower or "heater" in entity_lower or "heizung" in name_lower or "heizung" in entity_lower:
+                    candidates.append(ent)
+        if not candidates and len(entities) == 1:
+            candidates = entities
+        if not candidates:
+            return None
+
+        return {
+            "domain": "input_number",
+            "service": "set_value",
+            "entity_id": candidates[0]["entity_id"],
+            "value": value,
+        }
 
     def execute_pending_action(self):
         """Execute pending helper actions after explicit confirmation from user."""
@@ -480,6 +558,13 @@ class JarvisController(QObject):
 
     def start_processing(self, user_text: str):
         self.window.set_status("Thinking (Intent)...")
+        self._ack_spoken = False
+        self._action_pending = False
+        self._ack_start_time = time.time()
+        self._ack_stage = None
+        self._ack_index = 0
+        self._start_ack_timer()
+        self._start_llm_timeout("intent")
         
         # Get history
         history = self.conversation.get_ollama_messages()[-5:] # Last 5 messages
@@ -510,22 +595,27 @@ class JarvisController(QObject):
 
                 # Voice help intent
                 if data.get("intent") == "help":
+                    self._action_pending = False
                     self.current_action_taken = {
                         "action": "help",
                         "capabilities": self.describe_capabilities(),
                     }
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                     return
 
                 # Voice-triggered entity refresh
                 if data.get("intent") == "refresh_entities" or data.get("action") == "refresh":
+                    self._action_pending = True
                     refresh_result = self.refresh_entities()
                     self.current_action_taken = {"action": "refresh_entities", **refresh_result}
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                     return
                 
                 # Handle Memory Write Intent
                 if data.get("intent") == "memory_write" or (data.get("action") == "remember"):
+                    self._action_pending = False
                     # Extract fact logic (same as before but cleaner)
                     fact = self.current_user_text
                     lower_text = fact.lower()
@@ -544,33 +634,40 @@ class JarvisController(QObject):
                     if fact and len(fact) > 2:
                         self.memory_manager.add_fact(f"fact_{int(time.time())}", fact)
                         self.current_action_taken = {"action": "remember", "status": "success", "fact": fact}
+                        self._maybe_schedule_short_ack()
                         self.start_response_agent()
                         return
                     else:
                         logger.warning(f"Ignored invalid memory fact: '{fact}'")
                         self.current_intent = {"intent": "conversation"}
                         self.current_action_taken = None
+                        self._maybe_schedule_short_ack()
                         self.start_response_agent()
                         return
 
                 # Handle Memory Read Intent
                 if data.get("intent") == "memory_read":
+                    self._action_pending = False
                     # Just pass through to ResponseAgent, but mark action as 'recall' so it knows to look in memory
                     self.current_action_taken = {"action": "recall", "status": "success"}
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                     return
 
                 if data.get("intent") == "home_control":
+                    self._action_pending = True
                     # 2. Action Agent
                     self.window.set_status("Thinking (Action)...")
                     self.current_state = "action"
+                    self._start_llm_timeout("action")
                     
                     action_agent = ActionAgent()
                     messages = [{"role": "system", "content": action_agent.get_system_prompt(self.ha_entities)}]
                     messages.append({"role": "user", "content": f"Intent: {json.dumps(data)}. User: {self.current_user_text}"})
-                    
+                    self._maybe_schedule_short_ack()
                     self.llm_worker.generate(messages, format="json")
                 elif data.get("intent") == "helper_create":
+                    self._action_pending = True
                     # Stage a confirmation; do not execute until user confirms
                     helper_type = (data.get("helper_type") or "input_boolean").strip()
                     helper_name = data.get("helper_name") or self.current_user_text.strip() or "New Helper"
@@ -584,8 +681,10 @@ class JarvisController(QObject):
                         "message": f"Create {helper_type} named '{helper_name}'?"
                     }
                     self.current_action_taken = self.pending_action
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                 elif data.get("intent") == "helper_delete":
+                    self._action_pending = True
                     # Stage deletion confirmation
                     target = data.get("target") or data.get("helper_name") or self.current_user_text.strip()
                     self.pending_action = {
@@ -595,8 +694,10 @@ class JarvisController(QObject):
                         "message": f"Delete helper/entity '{target}'?"
                     }
                     self.current_action_taken = self.pending_action
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                 elif data.get("intent") == "todo_add":
+                    self._action_pending = True
                     title = data.get("todo_title") or self.current_user_text
                     due = data.get("todo_due")
                     self.pending_action = {
@@ -607,8 +708,10 @@ class JarvisController(QObject):
                         "message": f"Add reminder '{title}'" + (f" due {due}" if due else "") + "?"
                     }
                     self.current_action_taken = self.pending_action
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                 elif data.get("intent") == "todo_remove":
+                    self._action_pending = True
                     title = data.get("todo_title") or self.current_user_text
                     self.pending_action = {
                         "pending": True,
@@ -617,10 +720,13 @@ class JarvisController(QObject):
                         "message": f"Remove reminder '{title}'?"
                     }
                     self.current_action_taken = self.pending_action
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                 else:
+                    self._action_pending = False
                     # Skip to Response Agent
                     self.current_action_taken = None
+                    self._maybe_schedule_short_ack()
                     self.start_response_agent()
                     
             except Exception as e:
@@ -628,19 +734,37 @@ class JarvisController(QObject):
                 self.current_intent = {"intent": "conversation"}
                 # Provide feedback instead of silent failure
                 self.current_action_taken = {"error": "I couldn't understand that command. Please rephrasing."}
+                self._maybe_schedule_short_ack()
                 self.start_response_agent()
 
         elif self.current_state == "action":
             try:
-                action = extract_json(response)
+                action = extract_json(response) or {}
+                if not action or not action.get("service"):
+                    fallback = self._build_input_number_action()
+                    if fallback:
+                        action = fallback
+                if action.get("domain") == "input_number" and action.get("service") in ["turn_on", "turn_off", "toggle"]:
+                    fallback = self._build_input_number_action()
+                    if fallback:
+                        action = fallback
                 # Execute Action
                 if action and action.get("service"):
                     # Validate Service
-                    valid_services = ["turn_on", "turn_off", "toggle"]
+                    valid_services = ["turn_on", "turn_off", "toggle", "set_value"]
                     if action["service"] not in valid_services:
                         logger.error(f"Invalid service requested: {action['service']}")
-                        self.current_action_taken = {"error": f"Service '{action['service']}' is not supported. I can only turn on, turn off, or toggle."}
+                        self.current_action_taken = {"error": f"Service '{action['service']}' is not supported. I can only turn on, turn off, toggle, or set a value."}
                     else:
+                        if action["service"] == "set_value":
+                            if action.get("domain") != "input_number":
+                                self.current_action_taken = {"error": "set_value is only supported for input_number."}
+                                self.start_response_agent()
+                                return
+                            if action.get("value") is None:
+                                self.current_action_taken = {"error": "No value provided for input_number."}
+                                self.start_response_agent()
+                                return
                         self.window.set_status("Executing...")
                         try:
                             # 1. Verification: Normalize entity_id to list
@@ -654,7 +778,10 @@ class JarvisController(QObject):
                                 initial_states[eid] = self.ha_client.get_entity_state(eid).get("state")
                                 
                             # 3. Call Service
-                            self.ha_client.call_service(action["domain"], action["service"], {"entity_id": action["entity_id"]})
+                            payload = {"entity_id": action["entity_id"]}
+                            if action["service"] == "set_value":
+                                payload["value"] = action.get("value")
+                            self.ha_client.call_service(action["domain"], action["service"], payload)
                             
                             # 4. Wait brief checks
                             time.sleep(0.5) 
@@ -667,14 +794,29 @@ class JarvisController(QObject):
                                 final_states[eid] = new_state
                                 
                                 expected = None
-                                if action["service"] == "turn_on": expected = "on"
-                                elif action["service"] == "turn_off": expected = "off"
-                                elif action["service"] == "toggle": 
+                                if action["service"] == "turn_on":
+                                    expected = "on"
+                                elif action["service"] == "turn_off":
+                                    expected = "off"
+                                elif action["service"] == "toggle":
                                     expected = "off" if initial_states.get(eid) == "on" else "on"
+                                elif action["service"] == "set_value":
+                                    expected = action.get("value")
                                 
                                 if expected and new_state != expected:
-                                    logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
-                                    verified = False
+                                    if action["service"] == "set_value":
+                                        try:
+                                            expected_val = float(expected)
+                                            actual_val = float(new_state)
+                                            if abs(actual_val - expected_val) > 0.001:
+                                                logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
+                                                verified = False
+                                        except Exception:
+                                            logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
+                                            verified = False
+                                    else:
+                                        logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
+                                        verified = False
                             
                             # 6. Report result
                             result = action.copy()
@@ -694,19 +836,22 @@ class JarvisController(QObject):
             self.start_response_agent()
 
         elif self.current_state == "response":
+            self._cancel_ack_timer()
+            self._cancel_llm_timeout()
             # Final response
-            reply = response.strip()
+            reply = self._sanitize_reply(response)
             logger.info(f"Assistant: {reply}")
             self.conversation.add_message("assistant", reply)
             self.window.add_message(reply, is_user=False)
             
             self.window.set_status("Speaking...")
-            self.request_tts.emit(reply)
+            QTimer.singleShot(0, lambda: self.request_tts.emit(reply))
             self.current_state = "idle"
 
     def start_response_agent(self):
         self.window.set_status("Thinking (Reply)...")
         self.current_state = "response"
+        self._start_llm_timeout("response")
         
         # Get memory context
         memory_context = self.memory_manager.get_all_context()
@@ -743,6 +888,185 @@ class JarvisController(QObject):
         
         self.llm_worker.generate(messages, format="text")
 
+    def _start_ack_timer(self):
+        if self._ack_timer.isActive():
+            self._ack_timer.stop()
+        if self._ack_index >= len(self._ack_schedule):
+            return
+        elapsed_ms = int((time.time() - self._ack_start_time) * 1000)
+        target_ms = self._ack_schedule[self._ack_index]
+        remaining = max(0, target_ms - elapsed_ms)
+        self._ack_timer.start(remaining)
+
+    def _cancel_ack_timer(self):
+        if self._ack_timer.isActive():
+            self._ack_timer.stop()
+
+    def _on_ack_timeout(self):
+        if self.current_state not in ("intent", "action", "response"):
+            return
+        stage = self._stage_for_index(self._ack_index)
+        ack = self._pick_ack_phrase(stage=stage)
+        if not ack:
+            return
+        self._ack_spoken = True
+        self._ack_stage = stage
+        QTimer.singleShot(0, lambda: self.window.add_message(ack, is_user=False, animate=False))
+        try:
+            QTimer.singleShot(60, lambda: self.request_tts_ack.emit(ack))
+        except Exception as e:
+            logger.error(f"Ack TTS failed: {e}")
+        self._ack_index += 1
+        self._start_ack_timer()
+
+    def _stage_for_index(self, idx: int) -> str:
+        if idx == 0:
+            return "short"
+        if idx == 1:
+            return "long"
+        return "very_long"
+
+    def _maybe_schedule_short_ack(self):
+        if self._ack_index == 0:
+            self._start_ack_timer()
+
+    def _pick_ack_phrase(self, stage: str) -> str:
+        is_de = cfg.language == "de"
+        if self._action_pending:
+            if stage == "very_long":
+                options = [
+                    "Sorry for the wait. Still working on it.",
+                    "Apologies, this is taking longer than usual.",
+                    "Sorry, still handling that.",
+                    "Thanks for waiting. Still on it.",
+                    "I am still on it. Thank you for your patience.",
+                    "Still working on it. I will be with you shortly.",
+                ] if not is_de else [
+                    "Entschuldigung, das dauert laenger. Ich arbeite noch daran.",
+                    "Danke fuer deine Geduld. Ich bin noch dran.",
+                    "Es dauert etwas. Ich kuemmere mich noch darum.",
+                    "Sorry, ich arbeite noch daran.",
+                    "Ich bin weiterhin dran. Gleich fertig.",
+                ]
+            elif stage == "long":
+                options = [
+                    "Still on it.",
+                    "Just a moment longer.",
+                    "Working through that now.",
+                    "Almost there.",
+                    "Hang tight, nearly done.",
+                    "Still working on that.",
+                    "One more moment, I am on it.",
+                    "Still in progress, almost done.",
+                    "Holding steady, finishing up now.",
+                ] if not is_de else [
+                    "Ich bin dran.",
+                    "Einen Moment noch.",
+                    "Ich arbeite daran.",
+                    "Fast fertig.",
+                    "Ich bin noch dran.",
+                    "Ich bin gleich fertig.",
+                    "Noch einen kurzen Moment.",
+                ]
+            else:
+                options = [
+                    "Working on it.",
+                    "On it.",
+                    "Alright, handling that now.",
+                    "Got it, doing it now.",
+                    "Okay, one moment.",
+                    "Taking care of it.",
+                    "Starting that now.",
+                    "Doing that now.",
+                    "Understood, I am on it.",
+                    "Okay, I will handle that.",
+                ] if not is_de else [
+                    "Ich kuemmere mich darum.",
+                    "Alles klar, ich mache das.",
+                    "Verstanden, ich bin dran.",
+                    "In Ordnung, ich mache das jetzt.",
+                    "Okay, einen Moment.",
+                    "Ich erledige das.",
+                    "Ich starte das jetzt.",
+                ]
+        else:
+            if stage == "very_long":
+                options = [
+                    "Sorry for the wait. Still thinking.",
+                    "Apologies, this is taking a bit.",
+                    "Sorry, still working it out.",
+                    "Thanks for waiting. Still thinking.",
+                    "Sorry for the wait. Still working it out.",
+                    "Thanks for your patience. I am still thinking.",
+                ] if not is_de else [
+                    "Entschuldigung, das dauert laenger. Ich denke noch nach.",
+                    "Danke fuers Warten. Ich denke noch nach.",
+                    "Es dauert etwas. Ich denke noch.",
+                    "Sorry, ich ueberlege noch.",
+                    "Ich denke noch nach. Gleich soweit.",
+                ]
+            elif stage == "long":
+                options = [
+                    "Still thinking.",
+                    "Taking a little longer, hang on.",
+                    "One more moment.",
+                    "Give me a second longer.",
+                    "Thinking it through.",
+                    "Almost done, hang on.",
+                    "Just a bit longer.",
+                    "Let me think a moment longer.",
+                    "Still working it out, one moment.",
+                ] if not is_de else [
+                    "Ich denke noch nach.",
+                    "Einen Moment noch.",
+                    "Noch einen Moment.",
+                    "Ich ueberlege kurz.",
+                    "Ich denke das kurz durch.",
+                    "Gleich fertig.",
+                    "Nur einen Moment.",
+                ]
+            else:
+                options = [
+                    "Hmm, let me think.",
+                    "One moment.",
+                    "Let me check.",
+                    "Let me think for a second.",
+                    "Just a moment.",
+                    "Checking that now.",
+                    "Let me take a quick look.",
+                    "Let me have a quick look.",
+                    "Thinking for a moment.",
+                    "Give me a second to think.",
+                    "Let me think this through.",
+                    "I am thinking on that.",
+                    "Give me a moment.",
+                ] if not is_de else [
+                    "Hmm, einen Moment.",
+                    "Einen Moment.",
+                    "Lass mich kurz nachsehen.",
+                    "Ich denke kurz nach.",
+                    "Einen kurzen Moment.",
+                    "Ich schaue kurz nach.",
+                    "Ich ueberlege kurz.",
+                    "Ich denke kurz drueber nach.",
+                    "Gib mir einen Moment.",
+                ]
+        idx = int(time.time() * 1000) % len(options)
+        return options[idx]
+
+    def _sanitize_reply(self, text: str) -> str:
+        if not text:
+            return ""
+        cleaned = text.strip()
+        cleaned = unicodedata.normalize("NFKC", cleaned)
+        # Remove common markdown markers without stripping content.
+        cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
+        cleaned = re.sub(r"^#{1,6}\s*", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"^[-•]\s+", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
     def handle_tts_started(self):
         self.window.mic_btn.set_state(MicButton.STATE_SPEAKING)
 
@@ -752,9 +1076,31 @@ class JarvisController(QObject):
         self._start_wake_word_if_enabled()
 
     def handle_error(self, msg):
+        self._cancel_ack_timer()
+        self._cancel_llm_timeout()
         self.window.set_status("Error")
         self.window.add_message(f"Error: {msg}", is_user=False)
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+
+    def _start_llm_timeout(self, stage: str):
+        if self._llm_timeout.isActive():
+            self._llm_timeout.stop()
+        # Shorter timeout for intent/action, longer for response.
+        if stage in ("intent", "action"):
+            self._llm_timeout.start(180000)
+        else:
+            self._llm_timeout.start(240000)
+
+    def _cancel_llm_timeout(self):
+        if self._llm_timeout.isActive():
+            self._llm_timeout.stop()
+
+    def _on_llm_timeout(self):
+        self.window.set_status("Error")
+        self.window.add_message("Error: Response timed out. Please try again.", is_user=False)
+        self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+        self.current_state = "idle"
+        self._start_wake_word_if_enabled()
     
 if __name__ == "__main__":
     controller = JarvisController()

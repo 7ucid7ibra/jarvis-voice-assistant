@@ -108,8 +108,9 @@ class HomeAssistantClient:
             return f"Error fetching entities: {e}"
 
         relevant_domains = [
-            "light", "switch", "sensor", "binary_sensor", 
-            "cover", "climate", "input_boolean"
+            "light", "switch", "sensor", "binary_sensor",
+            "cover", "climate", "input_boolean",
+            "input_number", "input_text", "input_select"
         ]
         
         lines = []

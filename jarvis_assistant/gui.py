@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect,
+    QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
     QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox,
     QCheckBox, QProgressBar, QTabWidget, QMessageBox, QInputDialog
 )
@@ -1506,6 +1506,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.screen_frame)
         
         self.history_visible = True
+        self._bubble_anims = []
         
         # Control Deck
         deck_layout = QVBoxLayout()
@@ -1596,9 +1597,11 @@ class MainWindow(QMainWindow):
         self.resizing_y = False
         self.unsetCursor()
 
-    def add_message(self, text, is_user):
+    def add_message(self, text, is_user, animate=True):
         bubble = ChatBubble(text, is_user)
         self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, bubble)
+        if animate:
+            QTimer.singleShot(0, lambda: self._animate_bubble(bubble))
         QTimer.singleShot(100, lambda: self.scroll_area.verticalScrollBar().setValue(self.scroll_area.verticalScrollBar().maximum()))
 
     def clear_chat(self):
@@ -1607,6 +1610,30 @@ class MainWindow(QMainWindow):
             item = self.scroll_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+
+    def _animate_bubble(self, bubble):
+        try:
+            effect = QGraphicsOpacityEffect(bubble)
+            effect.setOpacity(0.0)
+            bubble.setGraphicsEffect(effect)
+
+            fade = QPropertyAnimation(effect, b"opacity")
+            fade.setDuration(220)
+            fade.setStartValue(0.0)
+            fade.setEndValue(1.0)
+            fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+            def cleanup():
+                if bubble.graphicsEffect() == effect:
+                    bubble.setGraphicsEffect(None)
+                self._bubble_anims = [a for a in self._bubble_anims if a is not fade]
+
+            fade.finished.connect(cleanup)
+
+            self._bubble_anims.append(fade)
+            fade.start()
+        except Exception:
+            pass
 
     def open_settings(self):
         # Ensure we have a controller ref
