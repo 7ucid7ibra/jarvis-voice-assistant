@@ -370,8 +370,18 @@ class JarvisController(QObject):
         else:
             if any(tok in text for tok in ["off", "aus", "zero", "null"]):
                 value = 0
+        relative_delta = None
         if value is None:
-            return None
+            if any(tok in text for tok in ["down", "lower", "less", "decrease", "runter", "weniger"]):
+                relative_delta = -1
+            if any(tok in text for tok in ["up", "higher", "more", "increase", "rauf", "hoeher", "mehr"]):
+                relative_delta = 1
+            if any(tok in text for tok in ["a little", "slightly", "a bit", "bit", "etwas", "ein wenig"]):
+                if relative_delta is None:
+                    relative_delta = -1
+            if any(tok in text for tok in ["a lot", "much", "way down", "way up", "viel"]):
+                if relative_delta is None:
+                    relative_delta = -2
 
         target_hint = ""
         if isinstance(self.current_intent, dict):
@@ -392,6 +402,19 @@ class JarvisController(QObject):
         if not candidates and len(entities) == 1:
             candidates = entities
         if not candidates:
+            return None
+
+        if value is None and relative_delta is not None:
+            current_raw = candidates[0].get("state")
+            try:
+                current_val = float(current_raw)
+                value = current_val + relative_delta
+                if value.is_integer():
+                    value = int(value)
+            except Exception:
+                return None
+
+        if value is None:
             return None
 
         return {
@@ -422,7 +445,35 @@ class JarvisController(QObject):
 
             payload = {"entity_id": action.get("entity_id")}
             if action.get("service") == "set_value":
-                payload["value"] = action.get("value")
+                value = action.get("value")
+                if isinstance(value, str):
+                    try:
+                        value = float(value)
+                        if value.is_integer():
+                            value = int(value)
+                    except Exception:
+                        return {"error": "Value must be numeric for input_number.", "action": action}
+                # Clamp to min/max if available to avoid 400 errors
+                try:
+                    entity_info = self.ha_client.get_entity_state(target_ids[0])
+                    attrs = entity_info.get("attributes", {}) if isinstance(entity_info, dict) else {}
+                    min_val = attrs.get("min")
+                    max_val = attrs.get("max")
+                    step = attrs.get("step")
+                    if isinstance(min_val, (int, float)) and value < min_val:
+                        value = min_val
+                    if isinstance(max_val, (int, float)) and value > max_val:
+                        value = max_val
+                    if isinstance(step, (int, float)) and isinstance(value, (int, float)):
+                        if isinstance(min_val, (int, float)):
+                            value = min_val + round((value - min_val) / step) * step
+                        else:
+                            value = round(value / step) * step
+                        if isinstance(value, float) and value.is_integer():
+                            value = int(value)
+                except Exception:
+                    pass
+                payload["value"] = value
             self.ha_client.call_service(action.get("domain"), action.get("service"), payload)
 
             time.sleep(0.5)
@@ -498,6 +549,25 @@ class JarvisController(QObject):
             return f"Scheduled task completed: turned off {entity_id}."
         return f"Scheduled task completed for {domain}:{service} on {entity_id}."
 
+    def _summarize_action_result(self, action: dict) -> str:
+        if action.get("service") == "set_value":
+            return f"Set {action.get('entity_id')} to {action.get('value')}."
+        if action.get("service") == "turn_on":
+            return f"Turned on {action.get('entity_id')}."
+        if action.get("service") == "turn_off":
+            return f"Turned off {action.get('entity_id')}."
+        if action.get("service") == "toggle":
+            return f"Toggled {action.get('entity_id')}."
+        return "Action completed."
+
+    def _summarize_action_failure(self, action: dict) -> str:
+        if action.get("error"):
+            return f"Action failed. {action.get('error')}"
+        if action.get("verified") is False:
+            entity_id = action.get("entity_id") or "the device"
+            return f"I tried, but {entity_id} did not respond."
+        return "Action failed."
+
     def _send_telegram_message(self, message: str) -> dict:
         token = cfg.telegram_bot_token
         chat_id = cfg.telegram_chat_id
@@ -512,6 +582,18 @@ class JarvisController(QObject):
             return {"status": "success"}
         except Exception as e:
             return {"status": "error", "error": str(e)}
+
+    def _telegram_reply(self, status: dict) -> str:
+        is_de = cfg.language == "de"
+        if status.get("scheduled"):
+            delay = status.get("delay_seconds")
+            if delay:
+                return f"Telegram-Nachricht in {int(delay)} Sekunden eingeplant." if is_de else f"Scheduled the Telegram message in {int(delay)} seconds."
+            return "Telegram-Nachricht eingeplant." if is_de else "Scheduled the Telegram message."
+        if status.get("status") == "success":
+            return "Telegram-Nachricht gesendet." if is_de else "Sent the Telegram message."
+        error = status.get("error") or ("Telegram-Nachricht fehlgeschlagen." if is_de else "Telegram message failed.")
+        return f"Telegram-Nachricht fehlgeschlagen. {error}" if is_de else f"Telegram message failed. {error}"
 
     def _parse_time_context(self) -> datetime:
         raw = (self.current_time_context or "").strip()
@@ -562,9 +644,10 @@ class JarvisController(QObject):
 
         def run_send():
             result = self._send_telegram_message(message)
-            summary = "Scheduled Telegram message sent."
+            is_de = cfg.language == "de"
+            summary = "Geplante Telegram-Nachricht gesendet." if is_de else "Scheduled Telegram message sent."
             if result.get("status") != "success":
-                summary = "Scheduled Telegram message failed."
+                summary = "Geplante Telegram-Nachricht fehlgeschlagen." if is_de else "Scheduled Telegram message failed."
             self.conversation.add_message("assistant", summary)
             self.window.add_message(summary, is_user=False)
             if cfg.tts_volume > 0.0:
@@ -1052,19 +1135,30 @@ class JarvisController(QObject):
         self._start_llm_timeout("response")
 
         if isinstance(self.current_action_taken, dict) and self.current_action_taken.get("action") == "telegram_send":
-            if self.current_action_taken.get("scheduled"):
-                delay = self.current_action_taken.get("delay_seconds")
-                if delay:
-                    reply = f"Scheduled the Telegram message in {int(delay)} seconds."
-                else:
-                    reply = "Scheduled the Telegram message."
-            elif self.current_action_taken.get("status") == "success":
-                reply = "Sent the Telegram message."
-            else:
-                error = self.current_action_taken.get("error") or "Telegram message failed."
-                reply = f"Telegram message failed. {error}"
-            self._reply_direct(reply)
+            self._reply_direct(self._telegram_reply(self.current_action_taken))
             return
+
+        if isinstance(self.current_action_taken, dict):
+            if isinstance(self.current_action_taken.get("actions"), list):
+                failures = []
+                successes = []
+                for action in self.current_action_taken.get("actions", []):
+                    if action.get("error") or action.get("verified") is False:
+                        failures.append(action)
+                    elif action.get("verified") is True:
+                        successes.append(action)
+                if failures:
+                    parts = []
+                    for act in successes:
+                        parts.append(self._summarize_action_result(act))
+                    for act in failures:
+                        parts.append(self._summarize_action_failure(act))
+                    self._reply_direct(" ".join(parts))
+                    return
+            elif self.current_action_taken.get("error") or self.current_action_taken.get("verified") is False:
+                reply = self._summarize_action_failure(self.current_action_taken)
+                self._reply_direct(reply)
+                return
         
         # Get memory context
         memory_context = self.memory_manager.get_all_context()
