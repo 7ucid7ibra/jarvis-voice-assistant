@@ -825,7 +825,22 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel("Access Token"))
         layout.addWidget(self.ha_token_edit)
 
-        
+        layout.addSpacing(12)
+        layout.addWidget(self._make_header("Telegram Notifications"))
+
+        self.telegram_token_edit = QLineEdit(cfg.telegram_bot_token)
+        self.telegram_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.telegram_token_edit.setPlaceholderText("Bot Token")
+        self._style_input(self.telegram_token_edit)
+        layout.addWidget(QLabel("Bot Token"))
+        layout.addWidget(self.telegram_token_edit)
+
+        self.telegram_chat_id_edit = QLineEdit(cfg.telegram_chat_id)
+        self.telegram_chat_id_edit.setPlaceholderText("Chat ID")
+        self._style_input(self.telegram_chat_id_edit)
+        layout.addWidget(QLabel("Chat ID"))
+        layout.addWidget(self.telegram_chat_id_edit)
+
         layout.addStretch()
         self.tabs.addTab(page, "Smart Home")
 
@@ -1037,6 +1052,10 @@ class SettingsDialog(QDialog):
         cfg.wake_word = self.wake_word_edit.text()
         cfg.ha_url = self.ha_url_edit.text()
         cfg.ha_token = self.ha_token_edit.text()
+        if hasattr(self, "telegram_token_edit"):
+            cfg.telegram_bot_token = self.telegram_token_edit.text()
+        if hasattr(self, "telegram_chat_id_edit"):
+            cfg.telegram_chat_id = self.telegram_chat_id_edit.text()
         
         cfg.save()
         logger.info(f"Settings saved to: {cfg.tts_voice_id}")
@@ -1540,6 +1559,17 @@ class MainWindow(QMainWindow):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet(f"color: #666; font-family: 'SF Mono', Menlo, Monaco, monospace; font-weight: bold; font-size: 11px; margin-top: 10px; letter-spacing: 1px;")
         deck_layout.addWidget(self.status_label)
+
+        self.response_timer_label = QLabel("")
+        self.response_timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
+        self.response_timer_label.setVisible(False)
+        deck_layout.addWidget(self.response_timer_label)
+
+        self._response_timer_start = None
+        self._response_timer = QTimer(self)
+        self._response_timer.setInterval(100)
+        self._response_timer.timeout.connect(self._update_response_timer)
         
         layout.addLayout(deck_layout)
         layout.addLayout(deck_layout)
@@ -1699,6 +1729,18 @@ class MainWindow(QMainWindow):
 
     def set_status(self, text):
         self.status_label.setText(text.upper())
+        upper = text.upper()
+        if "THINKING" in upper:
+            if not self._response_timer.isActive():
+                import time
+                self._response_timer_start = time.time()
+                self.response_timer_label.setText("0.0s")
+                self.response_timer_label.setVisible(True)
+                self._response_timer.start()
+        else:
+            if self._response_timer.isActive():
+                self._response_timer.stop()
+            self.response_timer_label.setVisible(False)
         txt = text.upper()
         
         # Robust mapping of status text to MicButton states
@@ -1715,3 +1757,10 @@ class MainWindow(QMainWindow):
              self.mic_btn.set_state(MicButton.STATE_SPEAKING)
         else:
              self.mic_btn.set_state(MicButton.STATE_IDLE)
+
+    def _update_response_timer(self):
+        if self._response_timer_start is None:
+            return
+        import time
+        elapsed = time.time() - self._response_timer_start
+        self.response_timer_label.setText(f"{elapsed:.1f}s")

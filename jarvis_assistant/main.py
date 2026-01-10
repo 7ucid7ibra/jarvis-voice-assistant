@@ -16,6 +16,8 @@ from .config import cfg
 from .utils import logger, extract_json
 import json
 import time
+from datetime import datetime, timedelta
+import requests
 from typing import Any
 import re
 import unicodedata
@@ -248,6 +250,7 @@ class JarvisController(QObject):
         self.window.set_status("Idle")
         
         self.pending_action = None
+        self.current_state = "idle"
         self._wake_word_active = False
         self._ack_spoken = False
         self._action_pending = False
@@ -259,6 +262,8 @@ class JarvisController(QObject):
         self._ack_timer.setSingleShot(True)
         self._ack_timer.timeout.connect(self._on_ack_timeout)
         self._ignore_llm = False
+        self._scheduled_tasks = []
+        self.current_time_context = ""
         self._llm_timeout = QTimer(self)
         self._llm_timeout.setSingleShot(True)
         self._llm_timeout.timeout.connect(self._on_llm_timeout)
@@ -396,6 +401,182 @@ class JarvisController(QObject):
             "value": value,
         }
 
+    def _execute_action(self, action: dict) -> dict:
+        valid_services = ["turn_on", "turn_off", "toggle", "set_value"]
+        if action.get("service") not in valid_services:
+            return {"error": f"Service '{action.get('service')}' is not supported. I can only turn on, turn off, toggle, or set a value.", "action": action}
+        if action.get("service") == "set_value":
+            if action.get("domain") != "input_number":
+                return {"error": "set_value is only supported for input_number.", "action": action}
+            if action.get("value") is None:
+                return {"error": "No value provided for input_number.", "action": action}
+
+        try:
+            target_ids = action.get("entity_id")
+            if isinstance(target_ids, str):
+                target_ids = [target_ids]
+
+            initial_states = {}
+            for eid in target_ids:
+                initial_states[eid] = self.ha_client.get_entity_state(eid).get("state")
+
+            payload = {"entity_id": action.get("entity_id")}
+            if action.get("service") == "set_value":
+                payload["value"] = action.get("value")
+            self.ha_client.call_service(action.get("domain"), action.get("service"), payload)
+
+            time.sleep(0.5)
+
+            verified = True
+            final_states = {}
+            for eid in target_ids:
+                new_state = self.ha_client.get_entity_state(eid).get("state", "unknown")
+                final_states[eid] = new_state
+
+                expected = None
+                if action.get("service") == "turn_on":
+                    expected = "on"
+                elif action.get("service") == "turn_off":
+                    expected = "off"
+                elif action.get("service") == "toggle":
+                    expected = "off" if initial_states.get(eid) == "on" else "on"
+                elif action.get("service") == "set_value":
+                    expected = action.get("value")
+
+                if expected and new_state != expected:
+                    if action.get("service") == "set_value":
+                        try:
+                            expected_val = float(expected)
+                            actual_val = float(new_state)
+                            if abs(actual_val - expected_val) > 0.001:
+                                verified = False
+                        except Exception:
+                            verified = False
+                    else:
+                        verified = False
+
+            result = action.copy()
+            result["verified"] = verified
+            result["final_states"] = final_states
+            return result
+        except Exception as e:
+            logger.error(f"HA Call failed: {e}")
+            return {"error": str(e), "action": action}
+
+    def _schedule_action(self, action: dict, delay_seconds: int) -> dict:
+        clean_action = {k: v for k, v in action.items() if k != "delay_seconds"}
+        delay_ms = max(0, int(delay_seconds * 1000))
+
+        def run_action():
+            result = self._execute_action(clean_action)
+            summary = self._summarize_scheduled_result(clean_action, result)
+            self.conversation.add_message("assistant", summary)
+            self.window.add_message(summary, is_user=False)
+            if cfg.tts_volume > 0.0:
+                QTimer.singleShot(0, lambda: self.request_tts.emit(summary))
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(run_action)
+        timer.start(delay_ms)
+        self._scheduled_tasks.append(timer)
+        return {"scheduled": True, "delay_seconds": delay_seconds, "action": clean_action}
+
+    def _summarize_scheduled_result(self, action: dict, result: dict) -> str:
+        if result.get("error"):
+            return "Scheduled task failed."
+        if result.get("verified") is False:
+            return "Scheduled task ran, but the device did not respond."
+        domain = action.get("domain")
+        service = action.get("service")
+        entity_id = action.get("entity_id")
+        if service == "set_value":
+            return f"Scheduled task completed: set {entity_id} to {action.get('value')}."
+        if service == "turn_on":
+            return f"Scheduled task completed: turned on {entity_id}."
+        if service == "turn_off":
+            return f"Scheduled task completed: turned off {entity_id}."
+        return f"Scheduled task completed for {domain}:{service} on {entity_id}."
+
+    def _send_telegram_message(self, message: str) -> dict:
+        token = cfg.telegram_bot_token
+        chat_id = cfg.telegram_chat_id
+        if not token or not chat_id:
+            return {"status": "error", "error": "Telegram token or chat ID is not set."}
+        if not message:
+            return {"status": "error", "error": "Message is empty."}
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        try:
+            resp = requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=10)
+            resp.raise_for_status()
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def _parse_time_context(self) -> datetime:
+        raw = (self.current_time_context or "").strip()
+        if raw:
+            try:
+                return datetime.fromisoformat(raw)
+            except Exception:
+                pass
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%H:%M:%S", "%H:%M"):
+                try:
+                    parsed = datetime.strptime(raw, fmt)
+                    if fmt.startswith("%H"):
+                        return datetime.now().replace(hour=parsed.hour, minute=parsed.minute, second=getattr(parsed, "second", 0), microsecond=0)
+                    return parsed
+                except Exception:
+                    continue
+        return datetime.now()
+
+    def _parse_delay_seconds(self, user_text: str) -> int:
+        text = (user_text or "").lower()
+        rel = re.search(r"in\\s+(\\d+)\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)", text)
+        if rel:
+            amount = int(rel.group(1))
+            unit = rel.group(2)
+            if unit.startswith("sec"):
+                return amount
+            if unit.startswith("min"):
+                return amount * 60
+            if unit.startswith("hour") or unit.startswith("hr"):
+                return amount * 3600
+        if "half an hour" in text or "half hour" in text:
+            return 1800
+
+        at_match = re.search(r"(?:at|um)\\s*(\\d{1,2})[:\\.](\\d{2})", text)
+        if at_match:
+            hour = int(at_match.group(1))
+            minute = int(at_match.group(2))
+            now = self._parse_time_context()
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target = target + timedelta(days=1)
+            return int((target - now).total_seconds())
+
+        return 0
+
+    def _schedule_telegram_message(self, message: str, delay_seconds: int) -> dict:
+        delay_ms = max(0, int(delay_seconds * 1000))
+
+        def run_send():
+            result = self._send_telegram_message(message)
+            summary = "Scheduled Telegram message sent."
+            if result.get("status") != "success":
+                summary = "Scheduled Telegram message failed."
+            self.conversation.add_message("assistant", summary)
+            self.window.add_message(summary, is_user=False)
+            if cfg.tts_volume > 0.0:
+                QTimer.singleShot(0, lambda: self.request_tts.emit(summary))
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(run_send)
+        timer.start(delay_ms)
+        self._scheduled_tasks.append(timer)
+        return {"scheduled": True, "delay_seconds": delay_seconds, "type": "telegram_send"}
+
     def _reply_direct(self, text: str):
         self._cancel_ack_timer()
         self._cancel_llm_timeout()
@@ -475,6 +656,9 @@ class JarvisController(QObject):
         return (
             "I am voice-first. I listen on your mics, transcribe locally, and talk back with system voices. "
             "Home control: I can turn on, turn off, or toggle lights, switches, input_booleans, and other supported domains via Home Assistant. "
+            "Scheduling: I can run actions later if you say things like 'in 30 minutes'. "
+            "Time: I can read the current time from Home Assistant. "
+            "Messaging: I can send Telegram messages if you add a bot token and chat ID in settings. "
             "Discovery: say 'refresh devices' after adding hardware in Home Assistant and I'll pull the latest list. "
             "Memory: you can tell me facts to remember or ask me to recall them. "
             "Configuration changes like adding entities or starting config flows are guarded and require your confirmation; I'll summarize before anything risky."
@@ -570,6 +754,7 @@ class JarvisController(QObject):
         
         self.conversation.add_message("user", text)
         self.window.add_message(text, is_user=True)
+        QTimer.singleShot(0, lambda: self.window.scroll_area.verticalScrollBar().setValue(self.window.scroll_area.verticalScrollBar().maximum()))
         
         self.window.set_status("Thinking...")
         # Start Multi-Agent Process
@@ -595,6 +780,7 @@ class JarvisController(QObject):
     def start_processing(self, user_text: str):
         self._ignore_llm = False
         self.window.chat_input.setEnabled(False)
+        self.current_time_context = self.ha_client.get_time_context()
         self.window.set_status("Thinking (Intent)...")
         self._ack_spoken = False
         self._action_pending = False
@@ -711,10 +897,21 @@ class JarvisController(QObject):
                     self._start_llm_timeout("action")
                     
                     action_agent = ActionAgent()
-                    messages = [{"role": "system", "content": action_agent.get_system_prompt(self.ha_entities)}]
+                    messages = [{"role": "system", "content": action_agent.get_system_prompt(self.ha_entities, self.current_time_context)}]
                     messages.append({"role": "user", "content": f"Intent: {json.dumps(data)}. User: {self.current_user_text}"})
                     self._maybe_schedule_short_ack()
                     self.llm_worker.generate(messages, format="json")
+                elif data.get("intent") == "telegram_send" or data.get("action") == "send_message":
+                    self._action_pending = True
+                    message = data.get("message") or self.current_user_text
+                    delay = self._parse_delay_seconds(self.current_user_text)
+                    if delay > 0:
+                        result = self._schedule_telegram_message(message, delay)
+                    else:
+                        result = self._send_telegram_message(message)
+                    self.current_action_taken = {"action": "telegram_send", **result}
+                    self._maybe_schedule_short_ack()
+                    self.start_response_agent()
                 elif data.get("intent") == "helper_create":
                     self._action_pending = True
                     # Stage a confirmation; do not execute until user confirms
@@ -788,94 +985,46 @@ class JarvisController(QObject):
 
         elif self.current_state == "action":
             try:
-                action = extract_json(response) or {}
-                if not action or not action.get("service"):
+                action_payload = extract_json(response) or {}
+                actions = []
+                if isinstance(action_payload, dict) and isinstance(action_payload.get("actions"), list):
+                    actions = [a for a in action_payload.get("actions") if isinstance(a, dict)]
+                elif isinstance(action_payload, dict) and action_payload:
+                    actions = [action_payload]
+
+                if not actions:
                     fallback = self._build_input_number_action()
                     if fallback:
-                        action = fallback
-                if action.get("domain") == "input_number" and action.get("service") in ["turn_on", "turn_off", "toggle"]:
-                    fallback = self._build_input_number_action()
-                    if fallback:
-                        action = fallback
-                # Execute Action
-                if action and action.get("service"):
-                    # Validate Service
-                    valid_services = ["turn_on", "turn_off", "toggle", "set_value"]
-                    if action["service"] not in valid_services:
-                        logger.error(f"Invalid service requested: {action['service']}")
-                        self.current_action_taken = {"error": f"Service '{action['service']}' is not supported. I can only turn on, turn off, toggle, or set a value."}
-                    else:
-                        if action["service"] == "set_value":
-                            if action.get("domain") != "input_number":
-                                self.current_action_taken = {"error": "set_value is only supported for input_number."}
-                                self.start_response_agent()
-                                return
-                            if action.get("value") is None:
-                                self.current_action_taken = {"error": "No value provided for input_number."}
-                                self.start_response_agent()
-                                return
-                        self.window.set_status("Executing...")
+                        actions = [fallback]
+
+                normalized_actions = []
+                for action in actions:
+                    if not action or not action.get("service"):
+                        continue
+                    if action.get("domain") == "input_number" and action.get("service") in ["turn_on", "turn_off", "toggle"]:
+                        fallback = self._build_input_number_action()
+                        if fallback:
+                            action = fallback
+                    normalized_actions.append(action)
+
+                if normalized_actions:
+                    self.window.set_status("Executing...")
+                    results = []
+                    fallback_delay = self._parse_delay_seconds(self.current_user_text)
+                    for action in normalized_actions:
+                        delay = action.get("delay_seconds") or 0
                         try:
-                            # 1. Verification: Normalize entity_id to list
-                            target_ids = action["entity_id"]
-                            if isinstance(target_ids, str):
-                                target_ids = [target_ids]
-                            
-                            # 2. Capture initial states
-                            initial_states = {}
-                            for eid in target_ids:
-                                initial_states[eid] = self.ha_client.get_entity_state(eid).get("state")
-                                
-                            # 3. Call Service
-                            payload = {"entity_id": action["entity_id"]}
-                            if action["service"] == "set_value":
-                                payload["value"] = action.get("value")
-                            self.ha_client.call_service(action["domain"], action["service"], payload)
-                            
-                            # 4. Wait brief checks
-                            time.sleep(0.5) 
-                            
-                            # 5. Verify outcomes
-                            verified = True
-                            final_states = {}
-                            for eid in target_ids:
-                                new_state = self.ha_client.get_entity_state(eid).get("state", "unknown")
-                                final_states[eid] = new_state
-                                
-                                expected = None
-                                if action["service"] == "turn_on":
-                                    expected = "on"
-                                elif action["service"] == "turn_off":
-                                    expected = "off"
-                                elif action["service"] == "toggle":
-                                    expected = "off" if initial_states.get(eid) == "on" else "on"
-                                elif action["service"] == "set_value":
-                                    expected = action.get("value")
-                                
-                                if expected and new_state != expected:
-                                    if action["service"] == "set_value":
-                                        try:
-                                            expected_val = float(expected)
-                                            actual_val = float(new_state)
-                                            if abs(actual_val - expected_val) > 0.001:
-                                                logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
-                                                verified = False
-                                        except Exception:
-                                            logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
-                                            verified = False
-                                    else:
-                                        logger.warning(f"Verification Failed for {eid}: expected {expected}, got {new_state}")
-                                        verified = False
-                            
-                            # 6. Report result
-                            result = action.copy()
-                            result["verified"] = verified
-                            result["final_states"] = final_states
-                            self.current_action_taken = result
-                            
-                        except Exception as e:
-                            logger.error(f"HA Call failed: {e}")
-                            self.current_action_taken = {"error": str(e)}
+                            delay = int(float(delay))
+                        except Exception:
+                            delay = 0
+                        if delay == 0 and fallback_delay > 0:
+                            delay = fallback_delay
+
+                        if delay > 0:
+                            results.append(self._schedule_action(action, delay))
+                        else:
+                            results.append(self._execute_action(action))
+                    self.current_action_taken = {"actions": results}
                 else:
                     self.current_action_taken = None
             except Exception as e:
@@ -901,6 +1050,21 @@ class JarvisController(QObject):
         self.window.set_status("Thinking (Reply)...")
         self.current_state = "response"
         self._start_llm_timeout("response")
+
+        if isinstance(self.current_action_taken, dict) and self.current_action_taken.get("action") == "telegram_send":
+            if self.current_action_taken.get("scheduled"):
+                delay = self.current_action_taken.get("delay_seconds")
+                if delay:
+                    reply = f"Scheduled the Telegram message in {int(delay)} seconds."
+                else:
+                    reply = "Scheduled the Telegram message."
+            elif self.current_action_taken.get("status") == "success":
+                reply = "Sent the Telegram message."
+            else:
+                error = self.current_action_taken.get("error") or "Telegram message failed."
+                reply = f"Telegram message failed. {error}"
+            self._reply_direct(reply)
+            return
         
         # Get memory context
         memory_context = self.memory_manager.get_all_context()
@@ -909,7 +1073,8 @@ class JarvisController(QObject):
         messages = [{"role": "system", "content": response_agent.get_system_prompt(
             memory_context=memory_context,
             entities_context=self.ha_entities,
-            capabilities=self.describe_capabilities()
+            capabilities=self.describe_capabilities(),
+            time_context=self.current_time_context
         )}]
         
         # Add conversation history (last 10 messages)

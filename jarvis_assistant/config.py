@@ -19,6 +19,8 @@ DEFAULT_API_KEY = ""
 DEFAULT_TODO_ENTITY = "todo.shopping_list"
 DEFAULT_PROFILE = "default"
 DEFAULT_PROFILES = ["default"]
+DEFAULT_TELEGRAM_BOT_TOKEN = ""
+DEFAULT_TELEGRAM_CHAT_ID = ""
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -179,6 +181,22 @@ class Config:
     @profiles.setter
     def profiles(self, value: list) -> None:
         self._settings["profiles"] = value
+
+    @property
+    def telegram_bot_token(self) -> str:
+        return self._settings.get("telegram_bot_token", DEFAULT_TELEGRAM_BOT_TOKEN)
+
+    @telegram_bot_token.setter
+    def telegram_bot_token(self, value: str) -> None:
+        self._settings["telegram_bot_token"] = value
+
+    @property
+    def telegram_chat_id(self) -> str:
+        return self._settings.get("telegram_chat_id", DEFAULT_TELEGRAM_CHAT_ID)
+
+    @telegram_chat_id.setter
+    def telegram_chat_id(self, value: str) -> None:
+        self._settings["telegram_chat_id"] = value
 
 
     

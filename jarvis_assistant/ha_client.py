@@ -127,3 +127,26 @@ class HomeAssistantClient:
             return "No relevant devices found."
             
         return "\n".join(lines)
+
+    def get_time_context(self) -> str:
+        """
+        Fetch time from Home Assistant sensors if available, else fallback to local time.
+        """
+        sensor_ids = [
+            "sensor.date_time_iso",
+            "sensor.date_time",
+            "sensor.time",
+        ]
+        for sensor_id in sensor_ids:
+            try:
+                state = self.get_entity_state(sensor_id).get("state")
+                if state and state not in ("unknown", "unavailable"):
+                    return state
+            except Exception:
+                continue
+        # Fallback to local time string
+        try:
+            from datetime import datetime
+            return datetime.now().isoformat(timespec="seconds")
+        except Exception:
+            return "unknown"

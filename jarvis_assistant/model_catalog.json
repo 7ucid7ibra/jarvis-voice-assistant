@@ -7,6 +7,36 @@
       "note": "Default fast option for low-power CPUs."
     },
     {
+      "name": "tinyllama:1.1b",
+      "size": "0.7 GB",
+      "hardware": "Very CPU friendly; 4-8GB RAM",
+      "note": "Tiny Llama baseline for fast CPU inference."
+    },
+    {
+      "name": "smollm:135m",
+      "size": "0.2 GB",
+      "hardware": "Ultra-light CPU",
+      "note": "Extremely small model for quick tests."
+    },
+    {
+      "name": "smollm:360m",
+      "size": "0.4 GB",
+      "hardware": "Ultra-light CPU",
+      "note": "Small model for fast responses on weak CPUs."
+    },
+    {
+      "name": "phi3:mini",
+      "size": "2.4 GB",
+      "hardware": "CPU friendly; 8-12GB RAM",
+      "note": "Microsoft Phi-3 mini, strong for its size."
+    },
+    {
+      "name": "phi3:mini-4k",
+      "size": "2.4 GB",
+      "hardware": "CPU friendly; 8-12GB RAM",
+      "note": "Phi-3 mini with short context; same size, faster prompt handling."
+    },
+    {
       "name": "qwen2.5:1.8b",
       "size": "4.3 GB",
       "hardware": "Better with fast CPU or light GPU",
