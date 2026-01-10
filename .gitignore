@@ -55,6 +55,7 @@ Thumbs.db
 *.temp
 jarvis.log
 history_*.json
+memory/
 memory_*.json
 conversation_history.json
 settings.json
