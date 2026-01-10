@@ -125,11 +125,8 @@ class ResponseAgent(BaseAgent):
             "- 'Action Result' may include 'verified': true/false. If verified=False, you MUST admit the failure (e.g. 'I tried, but the device didn't respond.').\n"
             "- If 'Action Result' is successful and verified, confirm it simply (e.g., 'Turned it off.').\n"
             "- If 'Action Result' contains an error, state it briefly and suggest the next concrete step (e.g., 'Couldn't turn it off: entity not found.').\n"
-<<<<<<< ours
             "- If 'Action Result' contains an 'actions' list, confirm each action briefly in one reply.\n"
             "- Do NOT tell the user to do one thing at a time. If multiple actions are requested, confirm what succeeded and what failed.\n"
-=======
->>>>>>> theirs
             "- If Intent is 'memory_read': Look at 'User Facts'. If the answer is there, say it. If NOT, say 'I don't recall that.' Do NOT guess.\n"
             "- Keep replies short and conversational by default. Provide more detail only if the user explicitly asks for an explanation.\n"
             "- Do NOT echo or describe 'System Context' or raw JSON. Never show the Action Result JSON to the user.\n"

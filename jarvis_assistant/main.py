@@ -258,6 +258,7 @@ class JarvisController(QObject):
         self._ack_timer = QTimer(self)
         self._ack_timer.setSingleShot(True)
         self._ack_timer.timeout.connect(self._on_ack_timeout)
+        self._ignore_llm = False
         self._llm_timeout = QTimer(self)
         self._llm_timeout.setSingleShot(True)
         self._llm_timeout.timeout.connect(self._on_llm_timeout)
@@ -395,6 +396,37 @@ class JarvisController(QObject):
             "value": value,
         }
 
+    def _reply_direct(self, text: str):
+        self._cancel_ack_timer()
+        self._cancel_llm_timeout()
+        self.current_state = "idle"
+        logger.info(f"Assistant: {text}")
+        self.conversation.add_message("assistant", text)
+        self.window.add_message(text, is_user=False)
+        self.window.set_status("Speaking...")
+        QTimer.singleShot(0, lambda: self.request_tts.emit(text))
+
+    def _is_multi_domain_request(self, user_text: str) -> bool:
+        text = (user_text or "").lower()
+        if "all lights" in text or "all light" in text or "alle lichter" in text:
+            return False
+
+        matched_domains = set()
+        entities = self._parse_entities()
+        for ent in entities:
+            name = ent["name"].lower()
+            entity_id = ent["entity_id"].lower()
+            suffix = entity_id.split(".")[-1]
+            if name and name in text:
+                matched_domains.add(ent["domain"])
+            elif suffix and re.search(rf"\\b{re.escape(suffix)}\\b", text):
+                matched_domains.add(ent["domain"])
+
+        if ("heater" in text or "heizung" in text) and any(ch.isdigit() for ch in text):
+            matched_domains.add("input_number")
+
+        return len(matched_domains) > 1
+
     def execute_pending_action(self):
         """Execute pending helper actions after explicit confirmation from user."""
         if not self.pending_action:
@@ -466,8 +498,9 @@ class JarvisController(QObject):
             return {"status": "error", "error": str(e)}
 
     def handle_mic_click(self):
-        # Ignore clicks during THINKING state
+        # Cancel in-flight processing if user clicks while thinking
         if self.window.mic_btn.state == MicButton.STATE_THINKING:
+            self._cancel_inflight("Cancelled")
             return
             
         if self.window.mic_btn.state == MicButton.STATE_IDLE:
@@ -499,6 +532,9 @@ class JarvisController(QObject):
         self.request_stt.emit(audio_data)
 
     def handle_text_input(self):
+        if self.current_state in ("intent", "action", "response"):
+            self.window.set_status("Please wait...")
+            return
         text = self.window.chat_input.text().strip()
         if not text:
             return
@@ -557,6 +593,8 @@ class JarvisController(QObject):
 
 
     def start_processing(self, user_text: str):
+        self._ignore_llm = False
+        self.window.chat_input.setEnabled(False)
         self.window.set_status("Thinking (Intent)...")
         self._ack_spoken = False
         self._action_pending = False
@@ -565,6 +603,14 @@ class JarvisController(QObject):
         self._ack_index = 0
         self._start_ack_timer()
         self._start_llm_timeout("intent")
+
+        if self._is_multi_domain_request(user_text):
+            reply = (
+                "I can handle one type at a time. Please ask for each device separately. "
+                "For example, first the heater, then the window or lights."
+            )
+            self._reply_direct(reply)
+            return
         
         # Get history
         history = self.conversation.get_ollama_messages()[-5:] # Last 5 messages
@@ -585,6 +631,9 @@ class JarvisController(QObject):
         self.llm_worker.generate(messages, format="json")
 
     def handle_llm_response(self, response: str):
+        if self._ignore_llm:
+            logger.info("Ignoring LLM response due to cancellation.")
+            return
         print(f"DEBUG: handle_llm_response called. State: {self.current_state}, Response: {response[:50]}...", flush=True)
         logger.info(f"LLM Response ({self.current_state}): {response}")
         
@@ -1073,6 +1122,7 @@ class JarvisController(QObject):
     def handle_tts_finished(self):
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
         self.window.set_status("Idle")
+        self.window.chat_input.setEnabled(True)
         self._start_wake_word_if_enabled()
 
     def handle_error(self, msg):
@@ -1081,6 +1131,16 @@ class JarvisController(QObject):
         self.window.set_status("Error")
         self.window.add_message(f"Error: {msg}", is_user=False)
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+        self.window.chat_input.setEnabled(True)
+
+    def _cancel_inflight(self, reason: str):
+        self._ignore_llm = True
+        self._cancel_ack_timer()
+        self._cancel_llm_timeout()
+        self.current_state = "idle"
+        self.window.mic_btn.set_state(MicButton.STATE_IDLE)
+        self.window.set_status("Idle")
+        self.window.chat_input.setEnabled(True)
 
     def _start_llm_timeout(self, stage: str):
         if self._llm_timeout.isActive():
