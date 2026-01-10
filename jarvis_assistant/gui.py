@@ -10,13 +10,14 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor, QPainter, QPen, QBrush, QRadialGradient, 
-    QLinearGradient, QFont, QPainterPath, QFontMetrics
+    QLinearGradient, QFont, QPainterPath, QFontMetrics, QIcon
 )
 import threading
 import os
 import psutil
 import subprocess
 import re
+from pathlib import Path
 from .config import cfg, COLOR_BACKGROUND, COLOR_ACCENT_CYAN, COLOR_ACCENT_TEAL
 from .utils import logger
 from .utils import logger
@@ -25,6 +26,11 @@ from .ui_framework import (
     GOLDEN_RATIO, BioMechCasing, COLOR_CHASSIS_DARK, COLOR_CHASSIS_MID,
     COLOR_ELECTRIC_BLUE, COLOR_SCREEN_BG, COLOR_PLASMA_CYAN, COLOR_AMBER_ALERT, BreathingAnim, KineticAnim
 )
+
+ICON_DIR = Path(__file__).resolve().parent / "assets" / "icons"
+
+def _load_icon(name: str) -> QIcon:
+    return QIcon(str(ICON_DIR / name))
 
 class MicButton(QWidget):
     clicked = pyqtSignal()
@@ -411,9 +417,11 @@ class SettingsDialog(QDialog):
         title_lbl.setFont(QFont("Impact", 18))
         title_lbl.setStyleSheet(f"color: {COLOR_ELECTRIC_BLUE}; letter-spacing: 2px;")
         
-        close_btn = QPushButton("✕")
+        close_btn = QPushButton()
         close_btn.setFixedSize(30, 30)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setIcon(_load_icon("close.svg"))
+        close_btn.setIconSize(QSize(14, 14))
         close_btn.setStyleSheet(f"""
             QPushButton {{ color: #DDD; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 16px; font-weight: bold; }}
             QPushButton:hover {{ color: #FF6666; border-color: #FF6666; }}
@@ -523,7 +531,8 @@ class SettingsDialog(QDialog):
         
         # Consolidation: update_ui_state will call refresh_installed_models
         self.llm_worker.progress.connect(self._on_model_progress)
-        self.update_ui_state(cfg.api_provider)
+        # Defer model loading to avoid blocking UI on dialog open
+        QTimer.singleShot(100, lambda: self.update_ui_state(cfg.api_provider))
         
         # Dragging logic for frameless window
         self.old_pos = None
@@ -643,11 +652,13 @@ class SettingsDialog(QDialog):
             QProgressBar::chunk {{ background: {COLOR_ELECTRIC_BLUE}; border-radius: 4px; }}
         """)
         
-        self.cancel_dl_btn = QPushButton("✕")
+        self.cancel_dl_btn = QPushButton()
         self.cancel_dl_btn.setFixedSize(24, 24)
         self.cancel_dl_btn.setVisible(False)
         self.cancel_dl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cancel_dl_btn.setToolTip("Cancel Download")
+        self.cancel_dl_btn.setIcon(_load_icon("close.svg"))
+        self.cancel_dl_btn.setIconSize(QSize(10, 10))
         self.cancel_dl_btn.setStyleSheet("QPushButton { color: #888; border: 1px solid #CCC; border-radius: 12px; font-weight: bold; background: white; } QPushButton:hover { color: red; border-color: red; }")
         self.cancel_dl_btn.clicked.connect(self._cancel_download)
 
@@ -741,6 +752,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel("System Voice"))
         layout.addWidget(self.voice_combo)
 
+
         # Preview voice button
         self.preview_btn = QPushButton("Preview Voice")
         self.preview_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -760,34 +772,12 @@ class SettingsDialog(QDialog):
         """)
         layout.addWidget(self.preview_btn)
 
-        layout.addWidget(QLabel("Speech Rate"))
-        self.rate_slider = QSlider(Qt.Orientation.Horizontal)
-        self.rate_slider.setRange(100, 300)
-        self.rate_slider.setValue(cfg.tts_rate)
-        self.rate_slider.setStyleSheet(f"""
-            QSlider::groove:horizontal {{
-                border: 1px solid #BBB;
-                height: 6px;
-                background: #DDD;
-                margin: 2px 0;
-                border-radius: 3px;
-            }}
-            QSlider::handle:horizontal {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #EEE, stop:1 #AAA);
-                border: 1px solid #777;
-                width: 18px;
-                margin: -7px 0;
-                border-radius: 9px;
-            }}
-            QSlider::add-page:horizontal {{ background: #DDD; }}
-            QSlider::sub-page:horizontal {{ background: {COLOR_ELECTRIC_BLUE}; }}
-        """)
-        layout.addWidget(self.rate_slider)
-        
         # Wake Word
         layout.addSpacing(10)
         self.wake_word_checkbox = QCheckBox("Enable Wake Word")
         self.wake_word_checkbox.setChecked(cfg.wake_word_enabled)
+        self.wake_word_checkbox.setEnabled(False)
+        self.wake_word_checkbox.setToolTip("Wake word detection is still in development.")
         self.wake_word_checkbox.setStyleSheet(f"""
             QCheckBox {{ color: #333; font-weight: bold; }}
             QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
@@ -797,7 +787,7 @@ class SettingsDialog(QDialog):
         
         self.wake_word_edit = QLineEdit(cfg.wake_word)
         self.wake_word_edit.setPlaceholderText("Wake word...")
-        self.wake_word_edit.setEnabled(cfg.wake_word_enabled)
+        self.wake_word_edit.setEnabled(False)
         self.wake_word_edit.setStyleSheet(f"""
             QLineEdit {{
                 background: {COLOR_SCREEN_BG};
@@ -813,6 +803,8 @@ class SettingsDialog(QDialog):
         
         layout.addStretch()
         self.tabs.addTab(page, "Speech")
+        self.voice_combo.currentIndexChanged.connect(self._update_piper_quality_visibility)
+        self._update_piper_quality_visibility()
 
     def _init_ha_page(self):
         page = QWidget()
@@ -832,6 +824,7 @@ class SettingsDialog(QDialog):
         self._style_input(self.ha_token_edit)
         layout.addWidget(QLabel("Access Token"))
         layout.addWidget(self.ha_token_edit)
+
         
         layout.addStretch()
         self.tabs.addTab(page, "Smart Home")
@@ -872,43 +865,36 @@ class SettingsDialog(QDialog):
     # I WILL INCLUDE THEM TO BE SAFE since I am replacing the class.
 
     def _populate_voices(self):
-        try:
-            import pyttsx3
-            engine = pyttsx3.init()
-            voices = engine.getProperty("voices")
-            self.voice_combo.clear()
+        self.voice_combo.clear()
 
-            saved_voice_id = cfg.tts_voice_id
-            target_index = -1
+        saved_voice_id = cfg.tts_voice_id
+        target_index = -1
 
-            # Add Default voice first
-            self.voice_combo.addItem("Default", "")
-            if not saved_voice_id:
-                target_index = 0
+        # Add Default voice first
+        self.voice_combo.addItem("Default", "")
+        if not saved_voice_id:
+            target_index = 0
 
-            selected_voices = ["Samantha", "Karen", "Daniel", "Albert", "Alice"]
+        # Add Piper voices (download on first use)
+        piper_voices = [
+            ("Piper (Amy) US Female", "piper:en_US-amy-medium"),
+            ("Piper (Lessac) US Female", "piper:en_US-lessac-medium"),
+            ("Piper (LJ) US Female", "piper:en_US-ljspeech-medium"),
+            ("Piper (Ryan) US Male", "piper:en_US-ryan-medium"),
+            ("Piper (Thorsten) DE Male", "piper:de_DE-thorsten-medium"),
+        ]
+        for label, voice_id in piper_voices:
+            self.voice_combo.addItem(label, voice_id)
+            if saved_voice_id == "piper" or (saved_voice_id and saved_voice_id.startswith(f"{voice_id}-")) or saved_voice_id == voice_id:
+                target_index = self.voice_combo.count() - 1
 
-            # Add Piper if exists
-            piper_path = os.path.join(os.getcwd(), "models", "tts", "en_US-amy-medium.onnx")
-            if os.path.exists(piper_path):
-                self.voice_combo.addItem("Piper (Amy) [AI]", "piper")
-                if saved_voice_id == "piper":
-                    target_index = self.voice_combo.count() - 1
+        import platform
+        # No additional system voices beyond Default.
 
-            for v in voices:
-                if v.name in selected_voices:
-                    self.voice_combo.addItem(v.name, v.id)
-                    if saved_voice_id and v.id == saved_voice_id:
-                        target_index = self.voice_combo.count() - 1
-
-            if target_index >= 0:
-                self.voice_combo.setCurrentIndex(target_index)
-            elif self.voice_combo.count() > 0:
-                self.voice_combo.setCurrentIndex(0)
-                
-        except Exception as e:
-            logger.error(f"Failed to populate voices: {e}")
-            self.voice_combo.clear()
+        if target_index >= 0:
+            self.voice_combo.setCurrentIndex(target_index)
+        elif self.voice_combo.count() > 0:
+            self.voice_combo.setCurrentIndex(0)
 
     def _preview_voice(self):
         voice_id = self.voice_combo.currentData()
@@ -948,9 +934,14 @@ class SettingsDialog(QDialog):
 
         def run_preview():
             try:
-                if voice_id == "piper":
-                     # TODO: Connect to piper if needed, for now just skip or simulate
-                     time.sleep(1) 
+                if isinstance(voice_id, str) and voice_id.startswith("piper"):
+                    from .tts import TTSWorker
+                    original_voice = cfg.tts_voice_id
+                    cfg.tts_voice_id = voice_id
+                    worker = TTSWorker()
+                    if worker.prepare_piper_voice(voice_id):
+                        worker.speak(test_text)
+                    cfg.tts_voice_id = original_voice
                 else:
                     import subprocess
                     import platform
@@ -1041,7 +1032,6 @@ class SettingsDialog(QDialog):
         elif l_text == "German": cfg.language = "de"
         else: cfg.language = None
         
-        cfg.tts_rate = self.rate_slider.value()
         cfg.tts_voice_id = self.voice_combo.currentData()
         cfg.wake_word_enabled = self.wake_word_checkbox.isChecked()
         cfg.wake_word = self.wake_word_edit.text()
@@ -1058,6 +1048,12 @@ class SettingsDialog(QDialog):
                  logger.error(f"Could not switch profile: {e}")
         
         self.accept()
+
+
+    def _update_piper_quality_visibility(self):
+        voice_id = self.voice_combo.currentData()
+        is_piper = isinstance(voice_id, str) and voice_id.startswith("piper:")
+        # Placeholder in case we add quality controls later.
 
     def _style_mini_btn(self, btn, destructive=False):
         color = "#FF6666" if destructive else COLOR_ELECTRIC_BLUE
@@ -1357,9 +1353,11 @@ class MainWindow(QMainWindow):
         # Replaced custom widget for glowing letters
         self.title_label = InteractiveTitleLabel()
         
-        settings_btn = QPushButton("⚙")
+        settings_btn = QPushButton()
         settings_btn.setFixedSize(30, 30)
         settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        settings_btn.setIcon(_load_icon("settings.svg"))
+        settings_btn.setIconSize(QSize(16, 16))
         settings_btn.setStyleSheet(f"""
             QPushButton {{ 
                 color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px; 
@@ -1402,9 +1400,11 @@ class MainWindow(QMainWindow):
         """)
         self.toggle_history_btn.clicked.connect(self.toggle_history)
         
-        self.mute_btn = QPushButton("🔊")
+        self.mute_btn = QPushButton()
         self.mute_btn.setFixedSize(28, 28)
         self.mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mute_btn.setIcon(_load_icon("volume.svg"))
+        self.mute_btn.setIconSize(QSize(16, 16))
         self.mute_btn.setStyleSheet(f"""
             QPushButton {{ 
                 color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;
@@ -1427,12 +1427,14 @@ class MainWindow(QMainWindow):
         # Initialize mute state from config
         self.is_muted = (cfg.tts_volume == 0.0)
         if self.is_muted:
-            self.mute_btn.setText("🔇")
+            self.mute_btn.setIcon(_load_icon("mute.svg"))
             self.mute_btn.setStyleSheet("color: #FF6666; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
         
-        close_btn = QPushButton("✕")
+        close_btn = QPushButton()
         close_btn.setFixedSize(30, 30)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setIcon(_load_icon("close.svg"))
+        close_btn.setIconSize(QSize(14, 14))
         close_btn.setStyleSheet(f"""
             QPushButton {{ 
                 color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 18px; 
@@ -1658,12 +1660,12 @@ class MainWindow(QMainWindow):
         if self.is_muted:
             # Mute TTS by setting volume to 0
             cfg.tts_volume = 0.0
-            self.mute_btn.setText("🔇")
+            self.mute_btn.setIcon(_load_icon("mute.svg"))
             self.mute_btn.setStyleSheet("color: #FF6666; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
         else:
             # Unmute TTS by restoring volume to default
             cfg.tts_volume = 1.0
-            self.mute_btn.setText("🔊")
+            self.mute_btn.setIcon(_load_icon("volume.svg"))
             self.mute_btn.setStyleSheet("color: #444; background: transparent; border: 1px solid #999; border-radius: 6px; font-size: 14px;")
         
         cfg.save()

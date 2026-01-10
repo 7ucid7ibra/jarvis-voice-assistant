@@ -1,6 +1,8 @@
 PyQt6
 sounddevice
 numpy<2
-git+https://github.com/openai/whisper.git
+faster-whisper
 pyttsx3
 requests
+piper-tts
+psutil

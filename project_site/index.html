@@ -18,7 +18,13 @@
 <body>
     <nav class="biomech-nav">
         <div class="nav-container">
-            <div class="logo">JARVIS<span class="core-glow">●</span>AI</div>
+            <div class="logo">JARVIS<span class="core-glow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <circle cx="12" cy="12" r="3" fill="currentColor" />
+                    </svg>
+                </span>AI</div>
             <div class="mobile-menu-btn">
                 <span></span>
                 <span></span>
@@ -43,8 +49,8 @@
                     <span class="status-text">PRIVATE BY DESIGN</span>
                 </div>
                 <h1>Your Home's <span class="plasma-text">Local</span> AI Brain.</h1>
-                <p>A local AI smart home assistant that understands, remembers your preferences, and manages your
-                    home.</p>
+                <p>A local AI smart home assistant that manages your
+                    home, remembers your preferences and understands nuanced requests.</p>
                 <div class="hero-btns">
                     <a href="#how-it-works" class="btn btn-primary">See Features</a>
                     <a href="https://github.com/Balanced-Libra/jarvis-voice-assistant" target="_blank"
@@ -71,9 +77,28 @@
                             </div>
                             <div class="gui-controls">
                                 <div class="ctrl-btn">Hide Chat</div>
-                                <div class="ctrl-icon">🔊</div>
-                                <div class="ctrl-icon">⚙️</div>
-                                <div class="ctrl-icon close">✕</div>
+                                <div class="ctrl-icon" title="Sound Settings">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                    </svg>
+                                </div>
+                                <div class="ctrl-icon" title="System Configuration">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="3" />
+                                        <path
+                                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                                    </svg>
+                                </div>
+                                <div class="ctrl-icon close" title="Exit Interface">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                    </svg>
+                                </div>
                             </div>
                         </div>
 
@@ -112,44 +137,71 @@
             <div class="container">
                 <div class="section-header">
                     <h2>How It Works</h2>
-                    <p>A smart home controller that understands, handles nuanced requests and
-                        remembers your preferences.</p>
+                    <p>You talk to it, it reasons, executes and replies.</p>
                 </div>
 
                 <div class="flow-diagram simple-flow">
                     <!-- Step 1: Listen -->
                     <div class="flow-step" id="step-listen">
-                        <div class="step-icon">🎤</div>
+                        <div class="step-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                <line x1="12" y1="19" x2="12" y2="23" />
+                                <line x1="8" y1="23" x2="16" y2="23" />
+                            </svg>
+                        </div>
                         <div class="step-content">
                             <h3>Listen</h3>
-                            <p>Voice processing happens entirely offline on your Mac.</p>
-                            <div class="expand-indicator">Details <span>▼</span></div>
+                            <p>Audio capture and speech-to-text run locally on your Mac.</p>
+                            <div class="expand-indicator">Details <span>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9" />
+                                    </svg>
+                                </span></div>
                             <div class="step-details">
                                 <h4>Audio & STT</h4>
                                 <p>Uses <strong><span class="tech-term"
                                             data-desc="A state-of-the-art speech recognition model by OpenAI, running locally.">OpenAI
-                                            Whisper</span></strong> locally to transcribe <span class="tech-term"
-                                        data-desc="The standard sample rate required by Whisper for accurate speech recognition.">16kHz</span>
-                                    audio in near <strong>real-time</strong>.</p>
+                                            Whisper</span></strong> locally to transcribe audio in near
+                                    <strong>real-time</strong>.
+                                </p>
                             </div>
                         </div>
                     </div>
 
                     <!-- Step 2: Think -->
                     <div class="flow-step" id="step-think">
-                        <div class="step-icon">💡</div>
+                        <div class="step-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path
+                                    d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.04-2.44 2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 2.04-2.44A2.5 2.5 0 0 1 9.5 2z" />
+                                <path
+                                    d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.04-2.44 2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0-2.04-2.44A2.5 2.5 0 0 0 14.5 2z" />
+                            </svg>
+                        </div>
                         <div class="step-content">
                             <h3>Think</h3>
                             <p>Jarvis understands context, memory, and intent.</p>
-                            <div class="expand-indicator">Details <span>▼</span></div>
+                            <div class="expand-indicator">Details <span>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9" />
+                                    </svg>
+                                </span></div>
                             <div class="step-details">
                                 <h4>Agent Routing</h4>
-                                <p><strong>Intent Agent</strong> classifies requests. <strong>Action Agent</strong>
-                                    handles Home Assistant <span class="tech-term"
-                                        data-desc="JavaScript Object Notation: A standard text format for structured data.">JSON</span>.
-                                    <strong>Response Agent</strong> chats.
-                                    <strong>Memory</strong> handles <span class="tech-term"
-                                        data-desc="Retrieval Augmented Generation: Letting the AI search your documents before answering.">RAG</span>.
+                                <p><strong>Intent Agent</strong> classifies the request. <strong>Action Agent</strong>
+                                    produces strict <span class="tech-term"
+                                        data-desc="JavaScript Object Notation: A standard text format for structured data.">JSON</span>
+                                    for Home Assistant.
+                                    <strong>Response Agent</strong> explains outcomes.
+                                    <strong>Memory</strong> provides retrieval (<span class="tech-term"
+                                        data-desc="Retrieval Augmented Generation: Letting the AI search your documents before answering.">RAG</span>)
+                                    when needed.
                                 </p>
                             </div>
                         </div>
@@ -157,11 +209,21 @@
 
                     <!-- Step 3: Act -->
                     <div class="flow-step" id="step-act">
-                        <div class="step-icon">⚡</div>
+                        <div class="step-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                            </svg>
+                        </div>
                         <div class="step-content">
                             <h3>Act</h3>
                             <p>Lights flip. Music plays. Scenes change. All via Home Assistant.</p>
-                            <div class="expand-indicator">Details <span>▼</span></div>
+                            <div class="expand-indicator">Details <span>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9" />
+                                    </svg>
+                                </span></div>
                             <div class="step-details">
                                 <h4>Home Assistant Control</h4>
                                 <p>Sends authenticated <strong><span class="tech-term"
@@ -182,9 +244,8 @@
             <div class="container">
                 <div class="section-header">
                     <h2>Private by Default</h2>
-                    <p>Your data belongs to you. Jarvis runs locally using Ollama, but can connect to cloud services if
-                        <em>you</em> choose.
-                    </p>
+                    <p>Jarvis is local by default. No telemetry. No background data collection. Cloud models are
+                        optional and only used when you explicitly enable a provider.</p>
                 </div>
 
                 <div class="model-showcase">
@@ -202,12 +263,28 @@
                                 <div class="model-badge primary">Recommended</div>
                             </div>
                         </div>
-                        <p>Everything runs on your Mac. No internet required. Zero data leaves your house.</p>
+                        <p>Runs fully on your Mac. Works offline. Your home context stays on your network.</p>
                         <ul class="pill-list">
                             <li>Ollama</li>
                             <li>Open Source LLM's</li>
                             <li>100% Private</li>
                         </ul>
+                        <div class="expand-indicator">Details <span>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                            </span></div>
+                        <div class="step-details">
+                            <h4>Ollama & Offline Models</h4>
+                            <p>Jarvis uses <strong><span class="tech-term"
+                                        data-tooltip="An open-source tool for running large language models locally on Mac, Linux, and Windows.">Ollama</span></strong>
+                                as the primary engine for local
+                                intelligence. You can download and run state-of-the-art models like
+                                <strong>Llama</strong>, <strong>Mistral</strong>, or
+                                <strong>Qwen</strong> with zero internet connection once pulled.
+                            </p>
+                        </div>
                     </div>
 
                     <!-- Cloud Model Card -->
@@ -228,98 +305,132 @@
                                 <div class="model-badge secondary">Optional</div>
                             </div>
                         </div>
-                        <p>Connect to powerful cloud models for complex reasoning or coding tasks.</p>
+                        <p>Optionally use cloud models for heavy reasoning. When enabled, requests are sent to the
+                            selected provider under their data policy.</p>
                         <ul class="pill-list">
                             <li>OpenAI</li>
                             <li>Gemini</li>
                             <li>OpenCode</li>
                         </ul>
+                        <div class="expand-indicator">Details <span>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9" />
+                                </svg>
+                            </span></div>
+                        <div class="step-details">
+                            <h4>Cloud Providers</h4>
+                            <p><strong>OpenCode</strong> offers a variety of powerful models that are
+                                <strong>free to use</strong> without any account creation.
+                                For enterprise-grade models from <strong>Gemini</strong> or
+                                <strong>OpenAI</strong>, you can easily connect your own
+                                <span class="tech-term"
+                                    data-tooltip="A unique identifier used to authenticate requests to cloud AI services.">API
+                                    keys</span> in the system settings.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <details class="deep-dive">
-                    <summary>
-                        <span class="summary-icon">🧬</span>
-                        <span class="summary-text">Tech Specs: Model Configuration</span>
-                        <span class="summary-arrow">▼</span>
-                    </summary>
-                    <div class="deep-dive-content">
-                        <p>Jarvis uses a unified provider interface. You can switch providers instantly in settings:</p>
-                        <ul>
-                            <li><strong>Local:</strong> Uses `subprocess` to talk to a local <span class="tech-term"
-                                    data-desc="A tool for running LLMs locally.">Ollama</span> instance (default
-                                <span class="tech-term"
-                                    data-desc="A network port is the numbered slot a service listens on; Ollama defaults to 11434.">port
-                                    11434</span>).
-                                Supports model catalog search and <span class="tech-term"
-                                    data-desc="Fetching a model from a registry to run it locally.">pull</span>.
-                            </li>
-                            <li><strong>Cloud:</strong> Standard HTTP requests to OpenAI/Gemini/OpenCode <span
-                                    class="tech-term"
-                                    data-desc="Application Programming Interface: How apps talk to servers.">APIs</span>.
-                                Supports
-                                JSON Schema output for structured actions.</li>
-                            <li><strong>Routing:</strong> The <span class="tech-term"
-                                    data-desc="A provider that normalizes request/response formats across model APIs.">OpenCode</span>
-                                provider automatically handles the difference between OpenAI-style and
-                                Anthropic-style message payloads.</li>
-                        </ul>
-                    </div>
-                </details>
             </div>
         </section>
 
         <!-- SMART HOME -->
         <section id="home" class="section alt-bg">
             <div class="container">
-                <div class="split-layout">
+                <div class="split-layout centered">
                     <div class="content-side">
-                        <h2>Control Your Home</h2>
-                        <p>Jarvis connects natively to <strong>Home Assistant</strong>. Just ask to toggle lights, set
-                            scenes, or check the temperature.</p>
-                        <ul class="feature-list">
-                            <li>“Turn on the kitchen lights”</li>
-                            <li>“Start the robot vacuum”</li>
-                            <li>“Remind me to buy milk”</li>
-                        </ul>
-
-                        <details class="deep-dive">
-                            <summary>
-                                <span class="summary-icon">🏠</span>
-                                <span class="summary-text">Integration Details</span>
-                                <span class="summary-arrow">▼</span>
-                            </summary>
-                            <div class="deep-dive-content">
-                                <p><strong>Dynamic Context Injection:</strong> Before every request, Jarvis fetches the
-                                    latest state of your devices and injects it into the system prompt:</p>
-                                <div class="code-window">
-                                    <div class="code-content">
-                                        <pre><span class="comment">// Context injected into LLM:</span>
-- light.studio_main: state=on, brightness=255
-- sensor.temperature: state=21.5
-- input_boolean.guest_mode: state=off
-
-<span class="comment">// Model Output (Action Agent):</span>
-{
-  "service": "light.turn_off",
-  "entity_id": "light.studio_main"
-}</pre>
+                        <h2 style="margin-bottom: 1rem; color: var(--text-primary);">Who this is for</h2>
+                        <div class="phi-gallery-container">
+                            <div class="phi-gallery">
+                                <div class="phi-track">
+                                    <div class="phi-slide active" data-index="0">
+                                        <div class="philosophy-item">
+                                            <div class="phi-icon">
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                                    stroke-linejoin="round">
+                                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                                    <circle cx="12" cy="11" r="2" />
+                                                </svg>
+                                            </div>
+                                            <p>Jarvis is for people who want to use <strong>cutting-edge AI</strong>
+                                                without outsourcing their private life.</p>
+                                        </div>
+                                    </div>
+                                    <div class="phi-slide" data-index="1">
+                                        <div class="philosophy-item">
+                                            <div class="phi-icon">
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                                    stroke-linejoin="round">
+                                                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                                                    <polyline points="9 22 9 12 15 12 15 22" />
+                                                    <circle cx="12" cy="7" r="1.5" />
+                                                </svg>
+                                            </div>
+                                            <p>For those who want to integrate AI into daily routines while keeping
+                                                personal data <strong>out of centralized data centers</strong>.</p>
+                                        </div>
+                                    </div>
+                                    <div class="phi-slide" data-index="2">
+                                        <div class="philosophy-item">
+                                            <div class="phi-icon">
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                                    stroke-linejoin="round">
+                                                    <circle cx="12" cy="12" r="3" />
+                                                    <path
+                                                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                                                </svg>
+                                            </div>
+                                            <p>For people who appreciate automation, but have outgrown <strong>brittle,
+                                                    opaque systems</strong> like Alexa and similar assistants.</p>
+                                        </div>
+                                    </div>
+                                    <div class="phi-slide" data-index="3">
+                                        <div class="philosophy-item">
+                                            <div class="phi-icon">
+                                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                                    stroke-linejoin="round">
+                                                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+                                                    <rect x="9" y="9" width="6" height="6" />
+                                                    <line x1="9" y1="1" x2="9" y2="4" />
+                                                    <line x1="15" y1="1" x2="15" y2="4" />
+                                                    <line x1="9" y1="20" x2="9" y2="23" />
+                                                    <line x1="15" y1="20" x2="15" y2="23" />
+                                                    <line x1="20" y1="9" x2="23" y2="9" />
+                                                    <line x1="20" y1="15" x2="23" y2="15" />
+                                                    <line x1="1" y1="9" x2="4" y2="9" />
+                                                    <line x1="1" y1="15" x2="4" y2="15" />
+                                                </svg>
+                                            </div>
+                                            <p>Built for users who want systems that are <strong>capable, private, and
+                                                    actually understand context</strong>.</p>
+                                        </div>
                                     </div>
                                 </div>
-                                <p>This ensures Jarvis never hallucinates device states.</p>
                             </div>
-                        </details>
-                    </div>
-                    <div class="visual-side">
-                        <!-- Simplified Visual: Reusing High-Fidelity UI Component logic but simpler -->
-                        <div class="ui-component special-home-card">
-                            <h4>Connected Home</h4>
-                            <div class="tech-details">
-                                <p><span>💡</span> <strong>Lights:</strong> 5 connected</p>
-                                <p><span>📡</span> <strong>Sensors:</strong> 3 active</p>
-                                <p><span>🛠️</span> <strong>Helpers:</strong> 2 managed</p>
-                                <hr style="border-color: var(--glass-border); margin: 10px 0;">
-                                <p class="sync-status"><span>✅</span> Status: Synchronization Active</p>
+                            <!-- Controls -->
+                            <button class="phi-nav prev" aria-label="Previous Slide">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="15 18 9 12 15 6" />
+                                </svg>
+                            </button>
+                            <button class="phi-nav next" aria-label="Next Slide">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="9 18 15 12 9 6" />
+                                </svg>
+                            </button>
+
+                            <div class="phi-dots">
+                                <span class="dot active" data-index="0"></span>
+                                <span class="dot" data-index="1"></span>
+                                <span class="dot" data-index="2"></span>
+                                <span class="dot" data-index="3"></span>
                             </div>
                         </div>
                     </div>
@@ -332,8 +443,7 @@
                 <h2>Get Started</h2>
                 <div class="install-steps">
                     <ol>
-                        <li>Download the source code from <a
-                                href="https://github.com/Balanced-Libra/jarvis-voice-assistant"
+                        <li>Clone the repository from <a href="https://github.com/Balanced-Libra/jarvis-voice-assistant"
                                 style="color: var(--plasma-cyan); text-decoration: none; font-weight: 600;">GitHub</a>.
                         </li>
                         <li>Open your terminal and navigate to the project folder.</li>
@@ -343,8 +453,8 @@
                 <div class="cli-box">
                     <span class="prompt">$</span> ./scripts/start.sh
                 </div>
-                <p class="install-notes">This script automatically configures the environment and launches your new
-                    assistant.</p>
+                <p class="install-notes">This script configures the environment and launches the reference system
+                    locally.</p>
             </div>
         </section>
 
@@ -352,7 +462,7 @@
 
     <footer>
         <div class="container">
-            <p>&copy; 2026 Jarvis. Your private, local smart home AI.</p>
+            <p>&copy; 2026 Jarvis. Local-first AI for the home.</p>
         </div>
     </footer>
 

@@ -9,10 +9,10 @@ A fully local, "Jarvis-style" voice assistant for macOS with a modern PyQt6 GUI.
 - 🎤 **Push-to-talk voice input** with visual feedback
 - 🧠 **Local LLM** powered by Ollama (qwen2.5:0.5b)
 - 🗣️ **Speech-to-Text** using OpenAI Whisper (base model)
-- 🔊 **Text-to-Speech** using macOS system voices
+- **Text-to-Speech** using macOS system voices
 - 💬 **Conversation history** with persistent storage
 - 🎨 **Modern dark UI** with animated mic button and chat bubbles
-- ⚙️ **Configurable settings** for model selection and TTS rate
+- **Configurable settings** for model selection and TTS rate
 
 ## Requirements
 
@@ -59,8 +59,8 @@ The script will automatically:
 2. **Talk**: Click the circular mic button to start recording
 3. **Stop**: Click again to stop and process your speech
 4. **Listen**: The assistant will respond with voice and text
-5. **Settings**: Click the ⚙ icon to change models or TTS settings
-6. **Close**: Click the ✕ icon to exit
+5. **Settings**: Click the settings button to change models or TTS settings
+6. **Close**: Click the close button to exit
 
 ### Mic Button States
 

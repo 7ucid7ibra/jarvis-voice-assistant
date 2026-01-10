@@ -180,6 +180,7 @@ class Config:
     def profiles(self, value: list) -> None:
         self._settings["profiles"] = value
 
+
     
     def save(self):
         try:

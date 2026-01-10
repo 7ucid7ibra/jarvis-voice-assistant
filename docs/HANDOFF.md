@@ -37,8 +37,8 @@ A fully local, "Jarvis-style" voice assistant for macOS with PyQt6 GUI. All proc
 - ✅ Animated mic button (4 states: idle, listening, thinking, speaking)
 - ✅ Chat bubbles for conversation display
 - ✅ Status line showing current state
-- ✅ Close button (✕)
-- ✅ Settings button (⚙)
+- ✅ Close button
+- ✅ Settings button
 
 ### Advanced Features
 - ✅ **Wake word detection** (continuous background listening)

@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(tooltipPopup);
 
     function showTooltip(term) {
-        const desc = term.getAttribute('data-desc');
+        const desc = term.getAttribute('data-tooltip') || term.getAttribute('data-desc');
         tooltipPopup.textContent = desc;
         tooltipPopup.classList.add('show');
 
@@ -114,24 +114,142 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Interactive Flow Steps (Expandable Tiles)
-    const flowSteps = document.querySelectorAll('.flow-step');
-    flowSteps.forEach(step => {
-        step.addEventListener('click', () => {
-            // Check if this step is already active
-            const isActive = step.classList.contains('active');
+    // Universal Expandable Cards (Tiles)
+    const expandableCards = document.querySelectorAll('.flow-step, .model-card, .deep-dive');
+    const modelCards = document.querySelectorAll('.model-card');
 
-            // Close all steps first (optional: uncomment if you want accordian style)
-            // flowSteps.forEach(s => s.classList.remove('active'));
+    expandableCards.forEach(card => {
+        card.addEventListener('click', () => {
+            const isModelCard = card.classList.contains('model-card');
+            const isDesktop = window.innerWidth > 968;
 
-            // Toggle this step
-            if (isActive) {
-                step.classList.remove('active');
+            if (isModelCard && isDesktop) {
+                // Synchronized behavior for model cards on desktop
+                const isGroupActive = card.classList.contains('active');
+                modelCards.forEach(mCard => {
+                    if (isGroupActive) {
+                        mCard.classList.remove('active');
+                    } else {
+                        mCard.classList.add('active');
+                    }
+                });
             } else {
-                step.classList.add('active');
+                // Independent behavior for flow-steps or mobile model cards
+                card.classList.toggle('active');
             }
         });
     });
+
+    // --- Philosophy Gallery Controller ---
+    const phiGallery = document.querySelector('.phi-gallery-container');
+    if (phiGallery) {
+        const track = phiGallery.querySelector('.phi-track');
+        const slides = Array.from(phiGallery.querySelectorAll('.phi-slide'));
+        const nextBtn = phiGallery.querySelector('.phi-nav.next');
+        const prevBtn = phiGallery.querySelector('.phi-nav.prev');
+        const dots = Array.from(phiGallery.querySelectorAll('.phi-dots .dot'));
+
+        let currentIndex = 0;
+        let isMoving = false;
+
+        function updateGallery(index) {
+            if (isMoving) return;
+            isMoving = true;
+
+            currentIndex = index;
+
+            // Move track
+            track.style.transform = `translateX(-${currentIndex * 100}%)`;
+
+            // Update active states
+            slides.forEach((slide, i) => {
+                slide.classList.toggle('active', i === currentIndex);
+            });
+
+            dots.forEach((dot, i) => {
+                dot.classList.toggle('active', i === currentIndex);
+            });
+
+            // Unlock after transition
+            setTimeout(() => { isMoving = false; }, 500);
+        }
+
+        // Auto-play logic with reset
+        let autoPlayInterval;
+
+        function startAutoPlay() {
+            if (window.innerWidth <= 768) return; // Disable auto-play on mobile
+
+            autoPlayInterval = setInterval(() => {
+                let nextIndex = (currentIndex + 1) % slides.length;
+                updateGallery(nextIndex);
+            }, 5000); // 5 seconds per slide
+        }
+
+        function resetAutoPlay() {
+            clearInterval(autoPlayInterval);
+            startAutoPlay();
+        }
+
+        nextBtn.addEventListener('click', () => {
+            let nextIndex = (currentIndex + 1) % slides.length;
+            updateGallery(nextIndex);
+            resetAutoPlay();
+        });
+
+        prevBtn.addEventListener('click', () => {
+            let prevIndex = (currentIndex - 1 + slides.length) % slides.length;
+            updateGallery(prevIndex);
+            resetAutoPlay();
+        });
+
+        dots.forEach((dot, i) => {
+            dot.addEventListener('click', () => {
+                updateGallery(i);
+                resetAutoPlay();
+            });
+        });
+
+        // Initialize auto-play
+        startAutoPlay();
+
+        // Pause auto-play on interaction
+        phiGallery.addEventListener('mouseenter', () => clearInterval(autoPlayInterval));
+        phiGallery.addEventListener('mouseleave', () => startAutoPlay());
+
+        // --- Swipe Support ---
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        phiGallery.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+            clearInterval(autoPlayInterval); // Pause auto-play while touching
+        }, { passive: true });
+
+        phiGallery.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+            startAutoPlay(); // Resume auto-play after swipe
+        }, { passive: true });
+
+        function handleSwipe() {
+            const swipeDistance = touchStartX - touchEndX;
+            const threshold = 50; // Minimum distance for a swipe
+
+            if (Math.abs(swipeDistance) > threshold) {
+                if (swipeDistance > 0) {
+                    // Swiped left -> Next slide
+                    let nextIndex = (currentIndex + 1) % slides.length;
+                    updateGallery(nextIndex);
+                } else {
+                    // Swiped right -> Previous slide
+                    let prevIndex = (currentIndex - 1 + slides.length) % slides.length;
+                    updateGallery(prevIndex);
+                }
+                resetAutoPlay();
+            }
+        }
+    }
 
     console.log('⚡ Jarvis Smart Home: Navigation ready');
 });
