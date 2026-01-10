@@ -25,33 +25,31 @@ A fully local, "Jarvis-style" voice assistant for macOS with a modern PyQt6 GUI.
 
 ### Prerequisites
 
-**Ollama** must be installed separately for the AI functionality:
+Homebrew is required for system dependencies. Ollama is installed automatically if missing.
 
 #### Install Homebrew (if not already installed):
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-#### Install Ollama:
-```bash
-brew install ollama
-```
+### Quick Start
 
-### Install Jarvis
-
-Simply run the launcher script:
+1. Clone or download the repository.
+2. Run the setup and launcher script:
 
 ```bash
 ./scripts/start.sh
 ```
 
 The script will automatically:
-1. Install system dependencies (portaudio, ffmpeg)
+1. Install system dependencies (portaudio, ffmpeg, Ollama if needed)
 2. Set up Python virtual environment
 3. Install Python dependencies
 4. Start Ollama (if not already running)
 5. Pull the required Ollama model
 6. Launch the application
+
+That's it! The app will open with a GUI.
 
 ## Usage
 
