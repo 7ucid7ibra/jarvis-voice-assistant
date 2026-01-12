@@ -886,7 +886,13 @@ class JarvisController(QObject):
         
         # 1. Intent Agent
         intent_agent = IntentAgent()
-        messages = [{"role": "system", "content": intent_agent.get_system_prompt(self.ha_entities)}]
+        memory_context = self.memory_manager.get_all_context()
+        messages = [{"role": "system", "content": intent_agent.get_system_prompt(
+            entities_context=self.ha_entities,
+            memory_context=memory_context,
+            capabilities=self.describe_capabilities(),
+            time_context=self.current_time_context
+        )}]
         messages.extend(history)
         messages.append({"role": "user", "content": user_text})
         
@@ -907,9 +913,26 @@ class JarvisController(QObject):
         logger.info(f"LLM Response ({self.current_state}): {response}")
         
         if self.current_state == "intent":
+            # Check if this is a direct conversation reply (plain text, not JSON)
+            if not response.strip().startswith('{') and not response.strip().startswith('['):
+                # Direct conversation reply from IntentAgent
+                self._cancel_ack_timer()
+                self._cancel_llm_timeout()
+                reply = self._sanitize_reply(response)
+                logger.info(f"Assistant (direct): {reply}")
+                self.conversation.add_message("assistant", reply)
+                self.window.add_message(reply, is_user=False)
+                
+                self.window.set_status("Speaking...")
+                QTimer.singleShot(0, lambda: self.request_tts.emit(reply))
+                self.current_state = "idle"
+                return
+            
+            # JSON response - proceed with normal intent processing
             try:
                 data = extract_json(response)
                 self.current_intent = data
+                logger.info(f"Parsed intent: {data.get('intent')}")
 
                 # Voice help intent
                 if data.get("intent") == "help":
@@ -1052,6 +1075,7 @@ class JarvisController(QObject):
                     self._maybe_schedule_short_ack()
                     self.start_response_agent()
                 else:
+                    logger.info(f"Unhandled intent falling through to conversation: {data}")
                     self._action_pending = False
                     # Skip to Response Agent
                     self.current_action_taken = None

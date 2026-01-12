@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, 
-    QPoint, QPointF, QRectF, QSize, pyqtProperty, QRect
+    QPoint, QPointF, QRectF, QSize, pyqtProperty, QRect,
+    QParallelAnimationGroup
 )
 from PyQt6.QtGui import (
     QColor, QPainter, QPen, QBrush, QRadialGradient, 
@@ -1564,7 +1565,10 @@ class MainWindow(QMainWindow):
         self.response_timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
         self.response_timer_label.setVisible(False)
-        deck_layout.addWidget(self.response_timer_label)
+        # Position as overlay instead of in layout
+        self.response_timer_label.setParent(self.casing)  # Parent to casing for reliable overlay
+        self._position_response_timer()
+        self.response_timer_label.raise_()  # Ensure it's on top
 
         self._response_timer_start = None
         self._response_timer = QTimer(self)
@@ -1621,6 +1625,10 @@ class MainWindow(QMainWindow):
                 # Normal move
                 self.move(self.pos() + delta)
                 self.old_pos = global_pos
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_response_timer()
 
     def mouseReleaseEvent(self, event):
         self.old_pos = None
@@ -1730,17 +1738,23 @@ class MainWindow(QMainWindow):
     def set_status(self, text):
         self.status_label.setText(text.upper())
         upper = text.upper()
-        if "THINKING" in upper:
+        start_keys = ["THINKING", "EXECUTING", "PROCESSING", "GENERATING", "TRANSCRIBING"]
+        stop_keys = ["IDLE", "SYSTEM READY", "READY", "ERROR", "LISTENING", "RECORDING"]
+        if any(k in upper for k in start_keys):
             if not self._response_timer.isActive():
                 import time
                 self._response_timer_start = time.time()
                 self.response_timer_label.setText("0.0s")
+                self._position_response_timer()
                 self.response_timer_label.setVisible(True)
+                self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
                 self._response_timer.start()
-        else:
+        elif any(k in upper for k in stop_keys):
             if self._response_timer.isActive():
                 self._response_timer.stop()
             self.response_timer_label.setVisible(False)
+            self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
+        self._position_response_timer()
         txt = text.upper()
         
         # Robust mapping of status text to MicButton states
@@ -1764,3 +1778,18 @@ class MainWindow(QMainWindow):
         import time
         elapsed = time.time() - self._response_timer_start
         self.response_timer_label.setText(f"{elapsed:.1f}s")
+        self._position_response_timer()
+
+    def _position_response_timer(self):
+        if not hasattr(self, "response_timer_label"):
+            return
+        self.response_timer_label.adjustSize()
+        parent = self.response_timer_label.parentWidget() or self
+        x = (parent.width() - self.response_timer_label.width()) // 2
+        if hasattr(self, "status_label"):
+            status_y = self.status_label.y() + self.status_label.height()
+            y = status_y + 8
+        else:
+            y = parent.height() - 50
+        self.response_timer_label.move(max(10, x), max(10, y))
+        self.response_timer_label.raise_()
