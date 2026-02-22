@@ -20,7 +20,7 @@ import subprocess
 import re
 from pathlib import Path
 from .config import cfg, COLOR_BACKGROUND, COLOR_ACCENT_CYAN, COLOR_ACCENT_TEAL
-from .utils import logger
+from .profile_paths import remove_profile_files
 from .utils import logger
 
 from .ui_framework import (
@@ -373,18 +373,18 @@ class ResourceMonitor(QWidget):
     def _fetch_gpu(self):
         try:
             cmd = "ioreg -r -c IOAccelerator | grep -E 'Device Utilization %' | head -n 1"
-            match = re.search(r'"Device Utilization %"=(\d+)', res)
+            completed = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=False)
+            output = completed.stdout or ""
+            match = re.search(r'"Device Utilization %"=(\d+)', output)
             if match:
                 val = int(match.group(1))
                 self.gpu_bar.set_percent(val)
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"GPU stats fetch failed: {e}")
 
 class SettingsDialog(QDialog):
     # Signals for thread safety
     preview_finished = pyqtSignal()
-    model_deleted = pyqtSignal(str, bool, str) # name, success, error_msg
-
     model_deleted = pyqtSignal(str, bool, str) # name, success, error_msg
 
     def __init__(self, parent=None, controller=None):
@@ -842,6 +842,19 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel("Chat ID"))
         layout.addWidget(self.telegram_chat_id_edit)
 
+        layout.addSpacing(12)
+        layout.addWidget(self._make_header("Web Search"))
+
+        self.web_search_checkbox = QCheckBox("Enable Web Search (DuckDuckGo)")
+        self.web_search_checkbox.setChecked(cfg.web_search_enabled)
+        self.web_search_checkbox.setToolTip("Allows the assistant to search the web. Requires internet access.")
+        self.web_search_checkbox.setStyleSheet(f"""
+            QCheckBox {{ color: #333; font-weight: bold; }}
+            QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
+            QCheckBox::indicator:checked {{ background: {COLOR_ELECTRIC_BLUE}; border-color: {COLOR_ELECTRIC_BLUE}; }}
+        """)
+        layout.addWidget(self.web_search_checkbox)
+
         layout.addStretch()
         self.tabs.addTab(page, "Smart Home")
 
@@ -1057,6 +1070,8 @@ class SettingsDialog(QDialog):
             cfg.telegram_bot_token = self.telegram_token_edit.text()
         if hasattr(self, "telegram_chat_id_edit"):
             cfg.telegram_chat_id = self.telegram_chat_id_edit.text()
+        if hasattr(self, "web_search_checkbox"):
+            cfg.web_search_enabled = self.web_search_checkbox.isChecked()
         
         cfg.save()
         logger.info(f"Settings saved to: {cfg.tts_voice_id}")
@@ -1122,9 +1137,9 @@ class SettingsDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             # Cleanup files
             try:
-                os.remove(f"memory_{curr}.json")
-                os.remove(f"history_{curr}.json")
-            except: pass
+                remove_profile_files(curr)
+            except Exception as e:
+                logger.debug(f"Profile file cleanup issue for '{curr}': {e}")
             
             profs = cfg.profiles
             if curr in profs: profs.remove(curr)

@@ -21,6 +21,7 @@ DEFAULT_PROFILE = "default"
 DEFAULT_PROFILES = ["default"]
 DEFAULT_TELEGRAM_BOT_TOKEN = ""
 DEFAULT_TELEGRAM_CHAT_ID = ""
+DEFAULT_WEB_SEARCH_ENABLED = False
 
 # UI Colors
 COLOR_BACKGROUND = "#05070b"
@@ -197,6 +198,14 @@ class Config:
     @telegram_chat_id.setter
     def telegram_chat_id(self, value: str) -> None:
         self._settings["telegram_chat_id"] = value
+
+    @property
+    def web_search_enabled(self) -> bool:
+        return self._settings.get("web_search_enabled", DEFAULT_WEB_SEARCH_ENABLED)
+
+    @web_search_enabled.setter
+    def web_search_enabled(self, value: bool) -> None:
+        self._settings["web_search_enabled"] = bool(value)
 
 
     

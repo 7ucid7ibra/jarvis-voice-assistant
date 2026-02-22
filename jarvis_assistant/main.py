@@ -1,8 +1,7 @@
 import sys
 import os
-import threading
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThread, pyqtSlot, QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QThread, QObject, pyqtSignal, QTimer
 
 from .gui import MainWindow, MicButton
 from .conversation import Conversation
@@ -12,158 +11,20 @@ from .llm_client import LLMWorker
 from .tts import TTSWorker
 from .ha_client import HomeAssistantClient
 from .memory import MemoryManager
+from .intent_utils import parse_delay_seconds, is_multi_domain_request
 from .config import cfg
 from .utils import logger, extract_json
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 from typing import Any
 import re
 import unicodedata
-
-class JarvisApp:
-    def __init__(self):
-        self.app = QApplication(sys.argv)
-        self.window = MainWindow()
-        self.conversation = Conversation()
-        
-        # Components
-        self.recorder = AudioRecorder()
-        self.stt = STTWorker()
-        self.llm = LLMWorker()
-        self.tts = TTSWorker()
-        
-        # Threads
-        self.stt_thread = QThread()
-        self.llm_thread = QThread()
-        self.tts_thread = QThread()
-        
-        # Move workers to threads
-        self.stt.moveToThread(self.stt_thread)
-        self.llm.moveToThread(self.llm_thread)
-        self.tts.moveToThread(self.tts_thread)
-        
-        # Start threads
-        self.stt_thread.start()
-        self.llm_thread.start()
-        self.tts_thread.start()
-        
-        # Wire signals
-        self._connect_signals()
-        
-        # Load history
-        self.conversation.load()
-        for msg in self.conversation.messages:
-            self.window.add_message(msg.content, msg.role == "user")
-            
-        self.window.show()
-
-    def _connect_signals(self):
-        # Mic Button
-        self.window.mic_btn.clicked.connect(self.handle_mic_click)
-        
-        # Recorder
-        self.recorder.finished.connect(self.handle_recording_finished)
-        
-        # STT
-        self.stt.finished.connect(self.handle_stt_finished)
-        self.stt.error.connect(self.handle_error)
-        
-        # LLM
-        self.llm.finished.connect(self.handle_llm_finished)
-        self.llm.error.connect(self.handle_error)
-        
-        # TTS
-        self.tts.started.connect(self.handle_tts_started)
-        self.tts.finished.connect(self.handle_tts_finished)
-
-    def handle_mic_click(self):
-        if self.window.mic_btn.state == MicButton.STATE_IDLE:
-            self.start_listening()
-        elif self.window.mic_btn.state == MicButton.STATE_LISTENING:
-            self.stop_listening()
-        elif self.window.mic_btn.state == MicButton.STATE_SPEAKING:
-            # Stop speaking if clicked
-            # TODO: Implement stop logic in TTS
-            pass
-
-    def start_listening(self):
-        self.window.mic_btn.set_state(MicButton.STATE_LISTENING)
-        self.window.set_status("Listening...")
-        self.recorder.start_recording()
-
-    def stop_listening(self):
-        self.window.set_status("Processing...")
-        self.recorder.stop_recording()
-
-    def handle_recording_finished(self, audio_data):
-        if len(audio_data) == 0:
-            self.window.mic_btn.set_state(MicButton.STATE_IDLE)
-            self.window.set_status("Idle")
-            return
-            
-        self.window.mic_btn.set_state(MicButton.STATE_THINKING)
-        self.window.set_status("Transcribing...")
-        # Invoke STT in its thread
-        # We use QMetaObject.invokeMethod or simply emit a signal connected to the slot.
-        # But here we can just call a wrapper that emits a signal, or better yet,
-        # define a signal in this class to trigger STT.
-        # For simplicity, let's add a signal to JarvisApp to trigger STT.
-        self.trigger_stt(audio_data)
-
-    def trigger_stt(self, audio_data):
-        # We need to pass this to the worker thread.
-        # Since we can't easily emit numpy array via signal across threads without registration sometimes,
-        # but PyQt6 handles it well.
-        # Let's define a signal on the App class.
-        pass
-
-    def handle_stt_finished(self, text):
-        if not text:
-            self.window.mic_btn.set_state(MicButton.STATE_IDLE)
-            self.window.set_status("Idle")
-            return
-            
-        logger.info(f"User: {text}")
-        self.conversation.add_message("user", text)
-        self.window.add_message(text, is_user=True)
-        
-        self.window.set_status("Thinking...")
-        # Trigger LLM
-        messages = self.conversation.get_ollama_messages()
-        # Again, need to trigger worker.
-        self.trigger_llm(messages)
-
-    def handle_llm_finished(self, text):
-        logger.info(f"Assistant: {text}")
-        self.conversation.add_message("assistant", text)
-        self.window.add_message(text, is_user=False)
-        
-        self.window.set_status("Speaking...")
-        # Trigger TTS
-        self.trigger_tts(text)
-
-    def handle_tts_started(self):
-        self.window.mic_btn.set_state(MicButton.STATE_SPEAKING)
-
-    def handle_tts_finished(self):
-        self.window.mic_btn.set_state(MicButton.STATE_IDLE)
-        self.window.set_status("Idle")
-
-    def handle_error(self, msg):
-        logger.error(msg)
-        self.window.set_status("Error")
-        self.window.add_message(f"Error: {msg}", is_user=False)
-        self.window.mic_btn.set_state(MicButton.STATE_IDLE)
-
-    # Signal definitions need to be at class level, but we are inside methods.
-    # So we need to restructure slightly to use signals for cross-thread communication.
+from urllib.parse import urlparse, parse_qs, unquote
+from html import unescape
 
 from .agents import IntentAgent, ActionAgent, ResponseAgent
-# from .wake_word import WakeWordWorker # This module doesn't exist yet or was named differently in previous context.
-# Checking previous context, WakeWordWorker was likely part of recorder or stt, or I hallucinated the file.
-# Let's check where WakeWordWorker is defined.
 
 
 class JarvisController(QObject):
@@ -172,10 +33,6 @@ class JarvisController(QObject):
     request_llm = pyqtSignal(list)
     request_tts = pyqtSignal(str)
     request_tts_ack = pyqtSignal(str)
-    
-    def open_settings(self):
-        dlg = SettingsDialog(self)
-        dlg.exec()
     
     def __init__(self):
         super().__init__()
@@ -257,7 +114,7 @@ class JarvisController(QObject):
         self._ack_stage = None
         self._ack_start_time = 0.0
         self._ack_index = 0
-        self._ack_schedule = [3000, 15000, 39000]
+        self._ack_schedule = [3000]
         self._ack_timer = QTimer(self)
         self._ack_timer.setSingleShot(True)
         self._ack_timer.timeout.connect(self._on_ack_timeout)
@@ -595,6 +452,78 @@ class JarvisController(QObject):
         error = status.get("error") or ("Telegram-Nachricht fehlgeschlagen." if is_de else "Telegram message failed.")
         return f"Telegram-Nachricht fehlgeschlagen. {error}" if is_de else f"Telegram message failed. {error}"
 
+    def _web_search(self, query: str, max_results: int = 3) -> dict:
+        if not cfg.web_search_enabled:
+            return {"status": "error", "error": "Web search is disabled in settings."}
+        if not query:
+            return {"status": "error", "error": "Empty search query."}
+        logger.info(f"Web search query: {query}")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        }
+        try:
+            resp = requests.get(
+                "https://duckduckgo.com/html/",
+                params={"q": query},
+                headers=headers,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            html = resp.text
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+        results = []
+        pattern = re.compile(
+            r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
+            r'(?:<a[^>]+class="result__snippet"[^>]*>|<div[^>]+class="result__snippet"[^>]*>)(.*?)</',
+            re.DOTALL,
+        )
+        for match in pattern.finditer(html):
+            href = match.group(1)
+            title = unescape(re.sub(r"<.*?>", "", match.group(2))).strip()
+            snippet = unescape(re.sub(r"<.*?>", "", match.group(3))).strip()
+            url = href
+            parsed = urlparse(href)
+            if parsed.path == "/l/" and "uddg" in parse_qs(parsed.query):
+                url = unquote(parse_qs(parsed.query)["uddg"][0])
+            if title and url:
+                results.append({"title": title, "url": url, "snippet": snippet})
+            if len(results) >= max_results:
+                break
+
+        if results:
+            return {"status": "success", "query": query, "results": results}
+
+        # Fallback: Wikipedia OpenSearch (free, limited scope)
+        try:
+            wiki_resp = requests.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={
+                    "action": "opensearch",
+                    "search": query,
+                    "limit": max_results,
+                    "namespace": 0,
+                    "format": "json",
+                },
+                headers=headers,
+                timeout=10,
+            )
+            wiki_resp.raise_for_status()
+            data = wiki_resp.json()
+            titles = data[1] if len(data) > 1 else []
+            snippets = data[2] if len(data) > 2 else []
+            urls = data[3] if len(data) > 3 else []
+            for title, snippet, url in zip(titles, snippets, urls):
+                if title and url:
+                    results.append({"title": title, "url": url, "snippet": snippet})
+        except Exception as e:
+            return {"status": "error", "error": f"No results found. {e}"}
+
+        if not results:
+            return {"status": "error", "error": "No results found."}
+        return {"status": "success", "query": query, "results": results}
+
     def _parse_time_context(self) -> datetime:
         raw = (self.current_time_context or "").strip()
         if raw:
@@ -613,31 +542,7 @@ class JarvisController(QObject):
         return datetime.now()
 
     def _parse_delay_seconds(self, user_text: str) -> int:
-        text = (user_text or "").lower()
-        rel = re.search(r"in\\s+(\\d+)\\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)", text)
-        if rel:
-            amount = int(rel.group(1))
-            unit = rel.group(2)
-            if unit.startswith("sec"):
-                return amount
-            if unit.startswith("min"):
-                return amount * 60
-            if unit.startswith("hour") or unit.startswith("hr"):
-                return amount * 3600
-        if "half an hour" in text or "half hour" in text:
-            return 1800
-
-        at_match = re.search(r"(?:at|um)\\s*(\\d{1,2})[:\\.](\\d{2})", text)
-        if at_match:
-            hour = int(at_match.group(1))
-            minute = int(at_match.group(2))
-            now = self._parse_time_context()
-            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if target <= now:
-                target = target + timedelta(days=1)
-            return int((target - now).total_seconds())
-
-        return 0
+        return parse_delay_seconds(user_text, self._parse_time_context())
 
     def _schedule_telegram_message(self, message: str, delay_seconds: int) -> dict:
         delay_ms = max(0, int(delay_seconds * 1000))
@@ -671,25 +576,7 @@ class JarvisController(QObject):
         QTimer.singleShot(0, lambda: self.request_tts.emit(text))
 
     def _is_multi_domain_request(self, user_text: str) -> bool:
-        text = (user_text or "").lower()
-        if "all lights" in text or "all light" in text or "alle lichter" in text:
-            return False
-
-        matched_domains = set()
-        entities = self._parse_entities()
-        for ent in entities:
-            name = ent["name"].lower()
-            entity_id = ent["entity_id"].lower()
-            suffix = entity_id.split(".")[-1]
-            if name and name in text:
-                matched_domains.add(ent["domain"])
-            elif suffix and re.search(rf"\\b{re.escape(suffix)}\\b", text):
-                matched_domains.add(ent["domain"])
-
-        if ("heater" in text or "heizung" in text) and any(ch.isdigit() for ch in text):
-            matched_domains.add("input_number")
-
-        return len(matched_domains) > 1
+        return is_multi_domain_request(user_text, self._parse_entities())
 
     def execute_pending_action(self):
         """Execute pending helper actions after explicit confirmation from user."""
@@ -742,6 +629,7 @@ class JarvisController(QObject):
             "Scheduling: I can run actions later if you say things like 'in 30 minutes'. "
             "Time: I can read the current time from Home Assistant. "
             "Messaging: I can send Telegram messages if you add a bot token and chat ID in settings. "
+            "Web search: I can look things up online when you ask me to search the web. "
             "Discovery: say 'refresh devices' after adding hardware in Home Assistant and I'll pull the latest list. "
             "Memory: you can tell me facts to remember or ask me to recall them. "
             "Configuration changes like adding entities or starting config flows are guarded and require your confirmation; I'll summarize before anything risky."
@@ -909,7 +797,7 @@ class JarvisController(QObject):
         if self._ignore_llm:
             logger.info("Ignoring LLM response due to cancellation.")
             return
-        print(f"DEBUG: handle_llm_response called. State: {self.current_state}, Response: {response[:50]}...", flush=True)
+        logger.debug(f"handle_llm_response state={self.current_state} preview={response[:50]!r}")
         logger.info(f"LLM Response ({self.current_state}): {response}")
         
         if self.current_state == "intent":
@@ -1016,6 +904,16 @@ class JarvisController(QObject):
                     else:
                         result = self._send_telegram_message(message)
                     self.current_action_taken = {"action": "telegram_send", **result}
+                    self._maybe_schedule_short_ack()
+                    self.start_response_agent()
+                elif data.get("intent") == "web_search":
+                    self._action_pending = True
+                    query = data.get("query") or self.current_user_text
+                    result = self._web_search(query)
+                    if result.get("status") == "success":
+                        self.current_action_taken = {"action": "web_search", "web_search_results": result.get("results", []), "query": result.get("query")}
+                    else:
+                        self.current_action_taken = {"action": "web_search", "error": result.get("error") or "Search failed."}
                     self._maybe_schedule_short_ack()
                     self.start_response_agent()
                 elif data.get("intent") == "helper_create":
@@ -1395,6 +1293,8 @@ class JarvisController(QObject):
         cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
         cleaned = re.sub(r"^#{1,6}\s*", "", cleaned, flags=re.MULTILINE)
         cleaned = re.sub(r"^[-•]\s+", "", cleaned, flags=re.MULTILINE)
+        # Remove URLs to keep TTS conversational.
+        cleaned = re.sub(r"https?://\\S+", "", cleaned)
         cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
@@ -1445,6 +1345,10 @@ class JarvisController(QObject):
         self.current_state = "idle"
         self._start_wake_word_if_enabled()
     
-if __name__ == "__main__":
+def main():
     controller = JarvisController()
     controller.run()
+
+
+if __name__ == "__main__":
+    main()

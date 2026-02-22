@@ -8,8 +8,8 @@ A fully local, "Jarvis-style" voice assistant for macOS with a modern PyQt6 GUI.
 
 - 🎤 **Push-to-talk voice input** with visual feedback
 - 🧠 **Local LLM** powered by Ollama (qwen2.5:0.5b)
-- 🗣️ **Speech-to-Text** using OpenAI Whisper (base model)
-- **Text-to-Speech** using macOS system voices
+- 🗣️ **Speech-to-Text** using Faster-Whisper (base model by default)
+- **Text-to-Speech** using Piper (preferred) with macOS system voice fallback
 - 💬 **Conversation history** with persistent storage
 - 🎨 **Modern dark UI** with animated mic button and chat bubbles
 - **Configurable settings** for model selection and TTS rate
@@ -133,9 +133,31 @@ Then run `./scripts/start.sh` again.
 - **PyQt6**: GUI framework
 - **sounddevice**: Audio recording
 - **numpy**: Numerical operations
-- **openai-whisper**: Speech recognition
-- **pyttsx3**: Text-to-speech
+- **faster-whisper**: Speech recognition
+- **piper-tts**: High-quality local text-to-speech
+- **pyttsx3**: Non-macOS fallback text-to-speech
 - **requests**: HTTP client for Ollama API
+
+## Verification
+
+Run from project root:
+
+```bash
+python -m py_compile jarvis_assistant/*.py
+```
+
+For regression tests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Home Assistant integration is environment-dependent. Run it only when your HA server is reachable:
+
+```bash
+python test_ha_connection.py
+```
 
 ## Performance
 

@@ -1,5 +1,17 @@
 # Home Assistant Integration & Multi-Agent Architecture
 
+## Baseline Offline Checks
+
+Run these from the project root before HA-specific testing:
+
+```bash
+python -m py_compile jarvis_assistant/*.py
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Home Assistant checks are integration tests and may fail if the HA host is offline or unreachable.
+
 ## Changes Made
 - **Multi-Agent Architecture**: Replaced the single-shot LLM logic with a 3-agent pipeline:
     1.  **Intent Agent**: Classifies intent and resolves context (e.g., "it" -> "test_switch").
