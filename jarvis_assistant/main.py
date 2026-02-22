@@ -11,7 +11,7 @@ from .llm_client import LLMWorker
 from .tts import TTSWorker
 from .ha_client import HomeAssistantClient
 from .memory import MemoryManager
-from .intent_utils import parse_delay_seconds, is_multi_domain_request
+from .intent_utils import parse_delay_seconds, is_multi_domain_request, state_matches_action
 from .config import cfg
 from .utils import logger, extract_json
 import json
@@ -30,7 +30,7 @@ from .agents import IntentAgent, ActionAgent, ResponseAgent
 class JarvisController(QObject):
     # Signals to drive workers
     request_stt = pyqtSignal(object)
-    request_llm = pyqtSignal(list)
+    request_llm = pyqtSignal(list, str)
     request_tts = pyqtSignal(str)
     request_tts_ack = pyqtSignal(str)
     
@@ -41,8 +41,8 @@ class JarvisController(QObject):
         self.window.controller = self # Inject ref for settings
         self.conversation = Conversation()
         self.ha_client = HomeAssistantClient()
-        self.ha_entities = self.ha_client.get_relevant_entities()
-        logger.info(f"Loaded HA Entities:\n{self.ha_entities}")
+        self.ha_entities = ""
+        QTimer.singleShot(500, self._async_load_ha_entities)
         
 
         
@@ -125,6 +125,10 @@ class JarvisController(QObject):
         self._llm_timeout.setSingleShot(True)
         self._llm_timeout.timeout.connect(self._on_llm_timeout)
         self._start_wake_word_if_enabled()
+
+    def _async_load_ha_entities(self):
+        self.ha_entities = self.ha_client.get_relevant_entities()
+        logger.info(f"Loaded HA Entities:\n{self.ha_entities}")
 
     def _start_wake_word_if_enabled(self):
         if cfg.wake_word_enabled and not self._wake_word_active:
@@ -295,6 +299,8 @@ class JarvisController(QObject):
             target_ids = action.get("entity_id")
             if isinstance(target_ids, str):
                 target_ids = [target_ids]
+            if not target_ids:
+                return {"error": "No target entity provided.", "action": action}
 
             initial_states = {}
             for eid in target_ids:
@@ -333,35 +339,33 @@ class JarvisController(QObject):
                 payload["value"] = value
             self.ha_client.call_service(action.get("domain"), action.get("service"), payload)
 
-            time.sleep(0.5)
-
-            verified = True
+            # Some integrations (e.g. WiZ) can take a few seconds to propagate state.
+            verify_deadline = time.time() + 5.0
+            poll_interval = 0.5
             final_states = {}
-            for eid in target_ids:
-                new_state = self.ha_client.get_entity_state(eid).get("state", "unknown")
-                final_states[eid] = new_state
+            verified = False
+            while True:
+                all_match = True
+                for eid in target_ids:
+                    try:
+                        new_state = self.ha_client.get_entity_state(eid).get("state", "unknown")
+                    except Exception:
+                        new_state = "unknown"
+                    final_states[eid] = new_state
+                    if not state_matches_action(
+                        action.get("service"),
+                        initial_states.get(eid),
+                        new_state,
+                        action.get("value"),
+                    ):
+                        all_match = False
 
-                expected = None
-                if action.get("service") == "turn_on":
-                    expected = "on"
-                elif action.get("service") == "turn_off":
-                    expected = "off"
-                elif action.get("service") == "toggle":
-                    expected = "off" if initial_states.get(eid) == "on" else "on"
-                elif action.get("service") == "set_value":
-                    expected = action.get("value")
-
-                if expected and new_state != expected:
-                    if action.get("service") == "set_value":
-                        try:
-                            expected_val = float(expected)
-                            actual_val = float(new_state)
-                            if abs(actual_val - expected_val) > 0.001:
-                                verified = False
-                        except Exception:
-                            verified = False
-                    else:
-                        verified = False
+                if all_match:
+                    verified = True
+                    break
+                if time.time() >= verify_deadline:
+                    break
+                time.sleep(poll_interval)
 
             result = action.copy()
             result["verified"] = verified
@@ -394,7 +398,12 @@ class JarvisController(QObject):
         if result.get("error"):
             return "Scheduled task failed."
         if result.get("verified") is False:
-            return "Scheduled task ran, but the device did not respond."
+            final_states = result.get("final_states", {}) or {}
+            entity_id = action.get("entity_id")
+            if isinstance(entity_id, list):
+                state_bits = [f"{eid}: {final_states.get(eid, 'unknown')}" for eid in entity_id]
+                return f"Scheduled task ran, but state did not update in time ({', '.join(state_bits)})."
+            return f"Scheduled task ran, but {entity_id} is still '{final_states.get(entity_id, 'unknown')}'."
         domain = action.get("domain")
         service = action.get("service")
         entity_id = action.get("entity_id")
@@ -421,8 +430,12 @@ class JarvisController(QObject):
         if action.get("error"):
             return f"Action failed. {action.get('error')}"
         if action.get("verified") is False:
+            final_states = action.get("final_states", {}) or {}
             entity_id = action.get("entity_id") or "the device"
-            return f"I tried, but {entity_id} did not respond."
+            if isinstance(entity_id, list):
+                state_bits = [f"{eid}: {final_states.get(eid, 'unknown')}" for eid in entity_id]
+                return f"I sent the command, but state did not update in time ({', '.join(state_bits)})."
+            return f"I sent the command, but {entity_id} is still '{final_states.get(entity_id, 'unknown')}'."
         return "Action failed."
 
     def _send_telegram_message(self, message: str) -> dict:
@@ -791,7 +804,7 @@ class JarvisController(QObject):
         
         self.current_state = "intent"
         self.current_user_text = user_text
-        self.llm_worker.generate(messages, format="json")
+        self.request_llm.emit(messages, "json")
 
     def handle_llm_response(self, response: str):
         if self._ignore_llm:
@@ -801,8 +814,16 @@ class JarvisController(QObject):
         logger.info(f"LLM Response ({self.current_state}): {response}")
         
         if self.current_state == "intent":
-            # Check if this is a direct conversation reply (plain text, not JSON)
-            if not response.strip().startswith('{') and not response.strip().startswith('['):
+            # Try structured parsing first (supports fenced JSON like ```json {...}```).
+            data = None
+            try:
+                parsed = extract_json(response)
+                if isinstance(parsed, dict) and any(k in parsed for k in ("intent", "action", "target")):
+                    data = parsed
+            except Exception:
+                data = None
+
+            if data is None:
                 # Direct conversation reply from IntentAgent
                 self._cancel_ack_timer()
                 self._cancel_llm_timeout()
@@ -810,15 +831,14 @@ class JarvisController(QObject):
                 logger.info(f"Assistant (direct): {reply}")
                 self.conversation.add_message("assistant", reply)
                 self.window.add_message(reply, is_user=False)
-                
+
                 self.window.set_status("Speaking...")
                 QTimer.singleShot(0, lambda: self.request_tts.emit(reply))
                 self.current_state = "idle"
                 return
-            
+
             # JSON response - proceed with normal intent processing
             try:
-                data = extract_json(response)
                 self.current_intent = data
                 logger.info(f"Parsed intent: {data.get('intent')}")
 
@@ -894,7 +914,7 @@ class JarvisController(QObject):
                     messages = [{"role": "system", "content": action_agent.get_system_prompt(self.ha_entities, self.current_time_context)}]
                     messages.append({"role": "user", "content": f"Intent: {json.dumps(data)}. User: {self.current_user_text}"})
                     self._maybe_schedule_short_ack()
-                    self.llm_worker.generate(messages, format="json")
+                    self.request_llm.emit(messages, "json")
                 elif data.get("intent") == "telegram_send" or data.get("action") == "send_message":
                     self._action_pending = True
                     message = data.get("message") or self.current_user_text
@@ -1116,7 +1136,7 @@ class JarvisController(QObject):
         
         messages.append({"role": "user", "content": final_prompt})
         
-        self.llm_worker.generate(messages, format="text")
+        self.request_llm.emit(messages, "text")
 
     def _start_ack_timer(self):
         if self._ack_timer.isActive():
@@ -1289,12 +1309,27 @@ class JarvisController(QObject):
             return ""
         cleaned = text.strip()
         cleaned = unicodedata.normalize("NFKC", cleaned)
+        # Remove fenced JSON command blocks that should never be spoken to the user.
+        cleaned = re.sub(
+            r"```(?:json)?\s*(\{[\s\S]*?\})\s*```",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        # Remove standalone "json" marker lines.
+        cleaned = re.sub(r"(?im)^\s*json\s*$", "", cleaned)
+        # Remove leaked inline command objects from model output.
+        cleaned = re.sub(
+            r"\{[^{}]*\"(?:intent|action|target|domain|service|entity_id)\"[^{}]*\}",
+            "",
+            cleaned,
+        )
         # Remove common markdown markers without stripping content.
         cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
         cleaned = re.sub(r"^#{1,6}\s*", "", cleaned, flags=re.MULTILINE)
         cleaned = re.sub(r"^[-•]\s+", "", cleaned, flags=re.MULTILINE)
         # Remove URLs to keep TTS conversational.
-        cleaned = re.sub(r"https?://\\S+", "", cleaned)
+        cleaned = re.sub(r"https?://\S+", "", cleaned)
         cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()

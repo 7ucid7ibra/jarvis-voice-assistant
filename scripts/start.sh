@@ -74,11 +74,12 @@ if [ ! -d ".venv" ]; then
     $PYTHON_CMD -m venv .venv
 fi
 source .venv/bin/activate
+VENV_PY=".venv/bin/python"
 
 # 5. Install Python dependencies
 echo "Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+"$VENV_PY" -m pip install --upgrade pip
+"$VENV_PY" -m pip install -r requirements.txt
 
 # 6. Ensure Ollama model exists
 echo "Checking Ollama model: $OLLAMA_MODEL"
@@ -89,4 +90,4 @@ fi
 
 # 7. Run the GUI
 echo "Starting Jarvis..."
-python -m jarvis_assistant.main
+"$VENV_PY" -m jarvis_assistant.main

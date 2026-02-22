@@ -62,6 +62,8 @@ settings.json
 
 # Test files and development scripts
 test_*.py
+!tests/
+!tests/*.py
 check_voices.py
 list_voices.py
 test_gpu.py

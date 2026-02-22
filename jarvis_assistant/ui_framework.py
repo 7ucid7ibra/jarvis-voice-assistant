@@ -56,6 +56,8 @@ class BioMechCasing(QFrame):
     def __init__(self, parent=None, squircle=True):
         super().__init__(parent)
         self.squircle = squircle
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.draw_outer_edge = False
         
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -103,18 +105,19 @@ class BioMechCasing(QFrame):
         
         painter.restore()
 
-        # 3. Outer Edge Highlight (Bezel Rim)
-        # Subtle, smooth radiance at edges, no sharp lines
-        edge_path = get_squircle_path(rect.adjusted(0.5, 0.5, -0.5, -0.5), 0, n=4.0) if self.squircle else QPainterPath()
-        if not self.squircle: edge_path.addRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 20, 20)
-        
-        edge_pen_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        edge_pen_grad.setColorAt(0, QColor(255, 255, 255, 150)) 
-        edge_pen_grad.setColorAt(1, QColor(255, 255, 255, 20)) 
-        
-        painter.setPen(QPen(QBrush(edge_pen_grad), 1.0)) # Thinner, softer bezel
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(edge_path)
+        if self.draw_outer_edge:
+            # 3. Optional outer edge highlight (disabled by default to avoid visible casing line artifacts)
+            edge_path = get_squircle_path(rect.adjusted(0.5, 0.5, -0.5, -0.5), 0, n=4.0) if self.squircle else QPainterPath()
+            if not self.squircle:
+                edge_path.addRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 20, 20)
+
+            edge_pen_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+            edge_pen_grad.setColorAt(0, QColor(255, 255, 255, 150))
+            edge_pen_grad.setColorAt(1, QColor(255, 255, 255, 20))
+
+            painter.setPen(QPen(QBrush(edge_pen_grad), 1.0))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(edge_path)
 
         # Removed sharp construction seam
 

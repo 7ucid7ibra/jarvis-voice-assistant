@@ -1,5 +1,8 @@
-import os
 import json
+import os
+
+from . import secret_store
+from .utils import logger
 
 # Default Settings
 DEFAULT_WHISPER_MODEL = "base"
@@ -10,8 +13,8 @@ DEFAULT_TTS_VOLUME = 1.0
 DEFAULT_TTS_VOICE_ID = None
 DEFAULT_WAKE_WORD_ENABLED = False
 DEFAULT_WAKE_WORD = "jarvis"
-DEFAULT_HA_URL = "http://192.168.188.126:8123"
-DEFAULT_HA_TOKEN = ""  # normally provided via env var
+DEFAULT_HA_URL = os.environ.get("HA_URL", "")
+DEFAULT_HA_TOKEN = ""
 DEFAULT_ASSISTANT_NAME = "JARVIS"
 DEFAULT_LANGUAGE = None  # None = auto, "en" = English, "de" = German
 DEFAULT_API_PROVIDER = "ollama"
@@ -34,84 +37,150 @@ COLOR_TEXT_SECONDARY = "#888888"
 
 # Resolve absolute path for settings.json
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
+SETTINGS_FILE = os.environ.get("JARVIS_SETTINGS_FILE", os.path.join(BASE_DIR, "settings.json"))
+SECRET_KEYS = {"ha_token", "api_key", "telegram_bot_token", "telegram_chat_id"}
+SECRET_ENV_MAP = {
+    "ha_token": "HA_TOKEN",
+    "api_key": "API_KEY",
+    "telegram_bot_token": "TELEGRAM_BOT_TOKEN",
+    "telegram_chat_id": "TELEGRAM_CHAT_ID",
+}
+
 
 class Config:
-    def __init__(self):
+    def __init__(self, settings_file: str = SETTINGS_FILE):
+        self._settings_file = settings_file
         self._settings = self._load_settings()
-    
+        self._migrate_legacy_secrets()
+
     def _load_settings(self):
-        if os.path.exists(SETTINGS_FILE):
+        if os.path.exists(self._settings_file):
             try:
-                with open(SETTINGS_FILE, 'r') as f:
+                with open(self._settings_file, "r") as f:
                     return json.load(f)
-            except:
+            except Exception:
                 pass
         return {}
-    
+
+    def _scrub_secret_keys(self) -> None:
+        for key in SECRET_KEYS:
+            self._settings.pop(key, None)
+
+    def _read_secret(self, key: str, default: str = "") -> str:
+        env_key = SECRET_ENV_MAP.get(key)
+        if env_key:
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                return env_val
+
+        stored = secret_store.get_secret(key)
+        if stored:
+            return stored
+
+        legacy = self._settings.get(key, "")
+        if isinstance(legacy, str) and legacy.strip():
+            return legacy
+        return default
+
+    def _write_secret(self, key: str, value: str) -> None:
+        clean_value = (value or "").strip()
+        if clean_value:
+            secret_store.set_secret(key, clean_value)
+        else:
+            secret_store.delete_secret(key)
+        self._settings.pop(key, None)
+
+    def _migrate_legacy_secrets(self) -> None:
+        changed = False
+        for key in SECRET_KEYS:
+            legacy_value = self._settings.get(key)
+            if not isinstance(legacy_value, str) or not legacy_value.strip():
+                if key in self._settings:
+                    self._settings.pop(key, None)
+                    changed = True
+                continue
+
+            env_key = SECRET_ENV_MAP.get(key)
+            if env_key and os.environ.get(env_key, "").strip():
+                self._settings.pop(key, None)
+                changed = True
+                continue
+
+            if secret_store.is_available():
+                secret_store.set_secret(key, legacy_value.strip())
+            else:
+                logger.warning(
+                    f"Keychain unavailable during migration for '{key}'. "
+                    "Plaintext value will be removed from settings.json."
+                )
+            self._settings.pop(key, None)
+            changed = True
+
+        if changed:
+            self.save()
+
     @property
     def whisper_model(self):
-        return self._settings.get('whisper_model', DEFAULT_WHISPER_MODEL)
-    
+        return self._settings.get("whisper_model", DEFAULT_WHISPER_MODEL)
+
     @whisper_model.setter
     def whisper_model(self, value):
-        self._settings['whisper_model'] = value
-    
+        self._settings["whisper_model"] = value
+
     @property
     def ollama_model(self):
-        return self._settings.get('ollama_model', DEFAULT_OLLAMA_MODEL)
-    
+        return self._settings.get("ollama_model", DEFAULT_OLLAMA_MODEL)
+
     @ollama_model.setter
     def ollama_model(self, value):
-        self._settings['ollama_model'] = value
-    
+        self._settings["ollama_model"] = value
+
     @property
     def ollama_api_url(self):
-        return self._settings.get('ollama_api_url', DEFAULT_OLLAMA_API_URL)
-    
+        return self._settings.get("ollama_api_url", DEFAULT_OLLAMA_API_URL)
+
     @property
     def tts_rate(self):
-        return self._settings.get('tts_rate', DEFAULT_TTS_RATE)
-    
+        return self._settings.get("tts_rate", DEFAULT_TTS_RATE)
+
     @tts_rate.setter
     def tts_rate(self, value):
-        self._settings['tts_rate'] = value
-    
+        self._settings["tts_rate"] = value
+
     @property
     def tts_volume(self):
-        return self._settings.get('tts_volume', DEFAULT_TTS_VOLUME)
-    
+        return self._settings.get("tts_volume", DEFAULT_TTS_VOLUME)
+
     @tts_volume.setter
     def tts_volume(self, value):
-        self._settings['tts_volume'] = value
+        self._settings["tts_volume"] = value
 
     @property
     def tts_voice_id(self):
-        return self._settings.get('tts_voice_id', DEFAULT_TTS_VOICE_ID)
+        return self._settings.get("tts_voice_id", DEFAULT_TTS_VOICE_ID)
 
     @tts_voice_id.setter
     def tts_voice_id(self, value):
-        self._settings['tts_voice_id'] = value
-    
+        self._settings["tts_voice_id"] = value
+
     @property
     def wake_word_enabled(self):
-        return self._settings.get('wake_word_enabled', DEFAULT_WAKE_WORD_ENABLED)
-    
+        return self._settings.get("wake_word_enabled", DEFAULT_WAKE_WORD_ENABLED)
+
     @wake_word_enabled.setter
     def wake_word_enabled(self, value):
-        self._settings['wake_word_enabled'] = value
-    
+        self._settings["wake_word_enabled"] = value
+
     @property
     def wake_word(self):
-        return self._settings.get('wake_word', DEFAULT_WAKE_WORD)
-    
+        return self._settings.get("wake_word", DEFAULT_WAKE_WORD)
+
     @wake_word.setter
     def wake_word(self, value):
-        self._settings['wake_word'] = value.lower().strip()
+        self._settings["wake_word"] = value.lower().strip()
 
     @property
     def ha_url(self) -> str:
-        # Prefer value from settings.json, otherwise env var, otherwise default
         return self._settings.get("ha_url", os.environ.get("HA_URL", DEFAULT_HA_URL))
 
     @ha_url.setter
@@ -120,12 +189,11 @@ class Config:
 
     @property
     def ha_token(self) -> str:
-        # Prefer env var for security, but allow override via settings.json if explicitly set
-        return self._settings.get("ha_token", os.environ.get("HA_TOKEN", DEFAULT_HA_TOKEN))
+        return self._read_secret("ha_token", DEFAULT_HA_TOKEN)
 
     @ha_token.setter
     def ha_token(self, value: str) -> None:
-        self._settings["ha_token"] = value
+        self._write_secret("ha_token", value)
 
     @property
     def language(self) -> str | None:
@@ -145,11 +213,11 @@ class Config:
 
     @property
     def api_key(self) -> str:
-        return self._settings.get("api_key", DEFAULT_API_KEY)
+        return self._read_secret("api_key", DEFAULT_API_KEY)
 
     @api_key.setter
     def api_key(self, value: str) -> None:
-        self._settings["api_key"] = value
+        self._write_secret("api_key", value)
 
     @property
     def todo_entity(self) -> str:
@@ -165,7 +233,7 @@ class Config:
 
     @assistant_name.setter
     def assistant_name(self, value: str) -> None:
-        self._settings["assistant_name"] = value.upper() # Enforce uppercase for title style
+        self._settings["assistant_name"] = value.upper()
 
     @property
     def current_profile(self) -> str:
@@ -185,19 +253,19 @@ class Config:
 
     @property
     def telegram_bot_token(self) -> str:
-        return self._settings.get("telegram_bot_token", DEFAULT_TELEGRAM_BOT_TOKEN)
+        return self._read_secret("telegram_bot_token", DEFAULT_TELEGRAM_BOT_TOKEN)
 
     @telegram_bot_token.setter
     def telegram_bot_token(self, value: str) -> None:
-        self._settings["telegram_bot_token"] = value
+        self._write_secret("telegram_bot_token", value)
 
     @property
     def telegram_chat_id(self) -> str:
-        return self._settings.get("telegram_chat_id", DEFAULT_TELEGRAM_CHAT_ID)
+        return self._read_secret("telegram_chat_id", DEFAULT_TELEGRAM_CHAT_ID)
 
     @telegram_chat_id.setter
     def telegram_chat_id(self, value: str) -> None:
-        self._settings["telegram_chat_id"] = value
+        self._write_secret("telegram_chat_id", value)
 
     @property
     def web_search_enabled(self) -> bool:
@@ -207,14 +275,18 @@ class Config:
     def web_search_enabled(self, value: bool) -> None:
         self._settings["web_search_enabled"] = bool(value)
 
+    @property
+    def keychain_available(self) -> bool:
+        return secret_store.is_available()
 
-    
     def save(self):
         try:
-            with open(SETTINGS_FILE, 'w') as f:
+            self._scrub_secret_keys()
+            with open(self._settings_file, "w") as f:
                 json.dump(self._settings, f, indent=2)
         except Exception as e:
-            print(f"Failed to save settings: {e}")
+            logger.error(f"Failed to save settings: {e}")
+
 
 # Global instance
 cfg = Config()

@@ -6,3 +6,5 @@ pyttsx3
 requests
 piper-tts
 psutil
+keyring
+pathvalidate

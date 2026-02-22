@@ -1,3 +1,4 @@
+import threading
 import sounddevice as sd
 import numpy as np
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
@@ -8,27 +9,30 @@ class AudioRecorder(QObject):
     """
     finished = pyqtSignal(object)  # Emits numpy array
     wake_word_chunk = pyqtSignal(object)  # Emits short audio chunks for wake word detection
-    
+
     def __init__(self, sample_rate=16000):
         super().__init__()
         self.sample_rate = sample_rate
         self.recording = False
         self.wake_word_listening = False
         self.frames = []
+        self._frames_lock = threading.Lock()
         self.stream = None
         self.wake_word_stream = None
-    
+
     def start_recording(self):
         """Start recording for user input"""
         self.recording = True
-        self.frames = []
-        
+        with self._frames_lock:
+            self.frames = []
+
         def callback(indata, frames, time, status):
             if status:
                 print(f"Audio status: {status}")
             if self.recording:
-                self.frames.append(indata.copy())
-        
+                with self._frames_lock:
+                    self.frames.append(indata.copy())
+
         self.stream = sd.InputStream(
             samplerate=self.sample_rate,
             channels=1,
@@ -36,7 +40,7 @@ class AudioRecorder(QObject):
             callback=callback
         )
         self.stream.start()
-    
+
     def stop_recording(self):
         """Stop recording and emit the audio data"""
         self.recording = False
@@ -44,9 +48,13 @@ class AudioRecorder(QObject):
             self.stream.stop()
             self.stream.close()
             self.stream = None
-        
-        if self.frames:
-            audio_data = np.concatenate(self.frames, axis=0)
+
+        with self._frames_lock:
+            frames_copy = list(self.frames)
+            self.frames = []
+
+        if frames_copy:
+            audio_data = np.concatenate(frames_copy, axis=0)
             self.finished.emit(audio_data)
         else:
             self.finished.emit(np.array([]))

@@ -9,6 +9,7 @@ import platform
 import importlib.util
 import shutil
 import sys
+from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 from .config import cfg
 from .utils import logger
@@ -57,7 +58,55 @@ class TTSWorker(QObject):
         self.piper_voice_id = None
         self.piper_model_path = None
         self.piper_config_path = None
+        self._afplay_proc = None
+        self._afplay_lock = threading.Lock()
         self._ensure_piper_models(self._get_piper_voice_id(), background=True)
+
+    def _piper_env(self) -> dict[str, str]:
+        """
+        Build environment for Piper execution.
+        On some macOS setups, piper/espeak fails when ESPEAK_DATA_PATH has spaces.
+        We create a stable no-space symlink in /tmp and point ESPEAK_DATA_PATH there.
+        """
+        env = os.environ.copy()
+        spec = importlib.util.find_spec("piper")
+        if not spec or not spec.origin:
+            return env
+
+        data_dir = Path(spec.origin).resolve().parent / "espeak-ng-data"
+        if not data_dir.exists():
+            return env
+
+        espeak_path = str(data_dir)
+        if " " in espeak_path:
+            link_path = Path(tempfile.gettempdir()) / "jarvis_piper_espeak_data"
+            try:
+                if link_path.is_symlink():
+                    if os.path.realpath(link_path) != str(data_dir):
+                        link_path.unlink()
+                elif link_path.exists():
+                    link_path.unlink()
+
+                if not link_path.exists():
+                    link_path.symlink_to(data_dir, target_is_directory=True)
+                espeak_path = str(link_path)
+            except Exception as e:
+                logger.warning(f"Could not create Piper espeak symlink: {e}")
+
+        env["ESPEAK_DATA_PATH"] = espeak_path
+        os.environ["ESPEAK_DATA_PATH"] = espeak_path
+        return env
+
+    def _play_wav_file(self, path: str) -> None:
+        with self._afplay_lock:
+            self._afplay_proc = subprocess.Popen(["afplay", path])
+            proc = self._afplay_proc
+        try:
+            proc.wait()
+        finally:
+            with self._afplay_lock:
+                if self._afplay_proc is proc:
+                    self._afplay_proc = None
 
     def _get_piper_voice_id(self) -> str | None:
         voice_id = cfg.tts_voice_id
@@ -84,6 +133,7 @@ class TTSWorker(QObject):
             self.use_piper = False
             logger.error("Piper module not installed; falling back to system TTS.")
             return
+        self._piper_env()
         self._set_piper_paths(voice_id)
         model_dir = os.path.dirname(self.piper_model_path)
         if not os.path.exists(model_dir):
@@ -137,6 +187,7 @@ class TTSWorker(QObject):
     def init_engine(self):
         if self.use_piper:
             try:
+                self._piper_env()
                 from piper.voice import PiperVoice
                 self.engine = PiperVoice.load(self.piper_model_path, config_path=self.piper_config_path)
                 logger.info("Piper engine initialized.")
@@ -158,7 +209,7 @@ class TTSWorker(QObject):
             logger.error(f"Fallback TTS init failed: {e}")
 
     def _synthesize_piper(self, text: str, temp_path: str) -> None:
-        """Synthesize Piper audio to temp_path, preferring CLI for reliability."""
+        """Synthesize Piper audio to temp_path."""
         # Piper length-scale: higher = slower, lower = faster
         length_scale = 1.0
         if cfg.tts_rate:
@@ -167,6 +218,37 @@ class TTSWorker(QObject):
             except Exception:
                 length_scale = 1.0
 
+        piper_env = self._piper_env()
+
+        # Prefer in-process Piper engine first (avoids external CLI dependency issues).
+        if self.engine is None:
+            self.init_engine()
+        if self.engine is not None and hasattr(self.engine, "synthesize"):
+            try:
+                logger.info("Using Piper in-process engine.")
+                with wave.open(temp_path, "wb") as wav_file:
+                    # Newer Piper exposes synthesize_wav(..., wav_file), older versions use synthesize(text, wav_file).
+                    if hasattr(self.engine, "synthesize_wav"):
+                        self.engine.synthesize_wav(text, wav_file)
+                    else:
+                        sample_rate = 22050
+                        try:
+                            if hasattr(self.engine, "config"):
+                                sample_rate = int(getattr(self.engine.config, "sample_rate", sample_rate) or sample_rate)
+                        except Exception:
+                            sample_rate = 22050
+                        wav_file.setnchannels(1)
+                        wav_file.setsampwidth(2)
+                        wav_file.setframerate(sample_rate)
+                        self.engine.synthesize(text, wav_file)
+
+                if os.path.getsize(temp_path) > 44:
+                    return
+                logger.warning("Piper in-process synthesis returned empty WAV; trying CLI fallback.")
+            except Exception as e:
+                logger.warning(f"Piper in-process synthesis failed; trying CLI fallback: {e}")
+
+        # Fallback to CLI execution paths if engine mode is unavailable.
         piper_bin = shutil.which("piper")
         if piper_bin:
             logger.info("Using Piper CLI.")
@@ -184,6 +266,7 @@ class TTSWorker(QObject):
                 ],
                 input=text,
                 text=True,
+                env=piper_env,
                 check=True,
             )
             if proc.returncode != 0:
@@ -208,6 +291,7 @@ class TTSWorker(QObject):
                 ],
                 input=text,
                 text=True,
+                env=piper_env,
                 check=True,
             )
             if proc.returncode != 0:
@@ -269,7 +353,7 @@ class TTSWorker(QObject):
                     raise RuntimeError("Piper output was empty or invalid.")
                 
                 # Play wav using afplay (built-in macOS player)
-                subprocess.run(["afplay", temp_path])
+                self._play_wav_file(temp_path)
                 try:
                     os.unlink(temp_path)
                 except:
@@ -304,7 +388,7 @@ class TTSWorker(QObject):
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
                     temp_path = temp_wav.name
                 self._synthesize_piper(text, temp_path)
-                subprocess.run(["afplay", temp_path])
+                self._play_wav_file(temp_path)
                 try:
                     os.unlink(temp_path)
                 except Exception:
@@ -350,8 +434,13 @@ class TTSWorker(QObject):
     def stop(self):
         """Stop current speech playback"""
         if self.use_piper:
-            # afplay doesn't easily stop without PID tracking, but we can pkill it
-            subprocess.run(["pkill", "afplay"])
+            with self._afplay_lock:
+                proc = self._afplay_proc
+            if proc and proc.poll() is None:
+                try:
+                    proc.terminate()
+                except Exception as e:
+                    logger.debug(f"Failed to terminate afplay process: {e}")
         elif self.engine is not None and hasattr(self.engine, 'stop'):
             self.engine.stop()
         self.finished.emit()

@@ -26,12 +26,16 @@ def extract_json(text: str) -> dict:
     """
     if not text:
         raise ValueError("Empty response")
-        
+
     text = text.strip()
+    # Common prefix produced by some models: "json\n{...}"
+    text = re.sub(r"^\s*json\s*\n", "", text, flags=re.IGNORECASE)
     
     # 1. Try direct parsing
     try:
-        return json.loads(text)
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
     except json.JSONDecodeError:
         pass
         
@@ -40,17 +44,21 @@ def extract_json(text: str) -> dict:
     match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group(1))
+            data = json.loads(match.group(1))
+            if isinstance(data, dict):
+                return data
         except json.JSONDecodeError:
             pass
             
-    # 3. Last resort: Find the first outermost curly braces
-    # This assumes the JSON object is reasonably well-formed starting with {
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
+    # 3. Decode the first valid JSON object from any "{" position.
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        start = match.start()
         try:
-            return json.loads(match.group(0))
+            data, _ = decoder.raw_decode(text[start:])
+            if isinstance(data, dict):
+                return data
         except json.JSONDecodeError:
-            pass
+            continue
             
     raise ValueError("No valid JSON found in response")

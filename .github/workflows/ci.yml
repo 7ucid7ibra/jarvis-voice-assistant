@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v0.2]
+  pull_request:
+    branches: [main, v0.2]
+
+jobs:
+  test:
+    runs-on: macos-14  # Apple Silicon runner; use macos-13 for Intel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install system dependencies
+        run: brew install portaudio
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install pytest-cov ruff
+
+      - name: Compile check
+        run: python -m py_compile jarvis_assistant/*.py
+
+      - name: Lint
+        run: ruff check jarvis_assistant/ tests/ --output-format=github
+
+      - name: Unit tests
+        run: pytest tests/ -v --tb=short --cov=jarvis_assistant --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false

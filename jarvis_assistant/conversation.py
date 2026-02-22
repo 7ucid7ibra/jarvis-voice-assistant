@@ -3,7 +3,6 @@ from typing import List, Literal
 import time
 import json
 import os
-from .config import cfg
 
 Role = Literal["user", "assistant", "system"]
 
@@ -22,7 +21,9 @@ class Conversation:
         self.messages: List[Message] = []
         self.history_file = history_file
         # Ensure directory exists
-        os.makedirs(os.path.dirname(self.history_file), exist_ok=True)
+        parent_dir = os.path.dirname(self.history_file)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
     # System prompt is now handled by agents
 
 

@@ -3,22 +3,37 @@ from .config import cfg
 
 class HomeAssistantClient:
     def __init__(self, base_url: str | None = None, token: str | None = None) -> None:
-        self.base_url = base_url or cfg.ha_url
-        self.token = token or cfg.ha_token
+        # Keep optional explicit overrides; otherwise resolve from cfg at request-time.
+        # This allows Settings changes (URL/token) to take effect without app restart.
+        self.base_url = base_url
+        self.token = token
+
+    def _resolve_base_url(self) -> str:
+        base_url = (self.base_url or cfg.ha_url or "").strip().rstrip("/")
+        if not base_url:
+            raise RuntimeError(
+                "Home Assistant URL is not set. "
+                "Set HA_URL env var or ha_url in settings."
+            )
+        return base_url
+
+    def _resolve_token(self) -> str:
+        return (self.token or cfg.ha_token or "").strip()
 
     def _headers(self) -> dict:
-        if not self.token:
+        token = self._resolve_token()
+        if not token:
             raise RuntimeError(
                 "Home Assistant token is not set. "
                 "Set HA_TOKEN env var or ha_token in settings."
             )
         return {
-            "Authorization": f"Bearer {self.token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
 
     def call_service(self, domain: str, service: str, data: dict) -> list:
-        url = f"{self.base_url}/api/services/{domain}/{service}"
+        url = f"{self._resolve_base_url()}/api/services/{domain}/{service}"
         resp = requests.post(url, headers=self._headers(), json=data, timeout=5)
         resp.raise_for_status()
         return resp.json()
@@ -34,13 +49,13 @@ class HomeAssistantClient:
         )
 
     def get_states(self) -> list:
-        url = f"{self.base_url}/api/states"
+        url = f"{self._resolve_base_url()}/api/states"
         resp = requests.get(url, headers=self._headers(), timeout=5)
         resp.raise_for_status()
         return resp.json()
 
     def get_entity_state(self, entity_id: str) -> dict:
-        url = f"{self.base_url}/api/states/{entity_id}"
+        url = f"{self._resolve_base_url()}/api/states/{entity_id}"
         resp = requests.get(url, headers=self._headers(), timeout=5)
         if resp.status_code == 404:
             return {"state": "unknown"}
@@ -51,7 +66,7 @@ class HomeAssistantClient:
         """
         Attempt to delete an entity via HA API. Note: not all entities are deletable via API.
         """
-        url = f"{self.base_url}/api/states/{entity_id}"
+        url = f"{self._resolve_base_url()}/api/states/{entity_id}"
         resp = requests.delete(url, headers=self._headers(), timeout=5)
         if resp.status_code not in (200, 202, 204):
             resp.raise_for_status()
@@ -67,17 +82,17 @@ class HomeAssistantClient:
             payload["description"] = description
         if due:
             payload["due"] = due
-        resp = requests.post(f"{self.base_url}/api/services/todo/add_item", headers=self._headers(), json={"entity_id": entity_id, "item": title, **({} if not description else {"description": description}), **({} if not due else {"due": due})}, timeout=5)
+        resp = requests.post(f"{self._resolve_base_url()}/api/services/todo/add_item", headers=self._headers(), json={"entity_id": entity_id, "item": title, **({} if not description else {"description": description}), **({} if not due else {"due": due})}, timeout=5)
         resp.raise_for_status()
         return resp.json()
 
     def remove_todo_item(self, entity_id: str, title: str) -> dict:
-        resp = requests.post(f"{self.base_url}/api/services/todo/remove_item", headers=self._headers(), json={"entity_id": entity_id, "item": title}, timeout=5)
+        resp = requests.post(f"{self._resolve_base_url()}/api/services/todo/remove_item", headers=self._headers(), json={"entity_id": entity_id, "item": title}, timeout=5)
         resp.raise_for_status()
         return resp.json()
 
     def list_todo_items(self, entity_id: str) -> list:
-        resp = requests.get(f"{self.base_url}/api/todo/{entity_id}", headers=self._headers(), timeout=5)
+        resp = requests.get(f"{self._resolve_base_url()}/api/todo/{entity_id}", headers=self._headers(), timeout=5)
         resp.raise_for_status()
         return resp.json()
 
@@ -92,7 +107,7 @@ class HomeAssistantClient:
         payload = {"name": name}
         if data:
             payload.update(data)
-        url = f"{self.base_url}/api/config/{helper_type}"
+        url = f"{self._resolve_base_url()}/api/config/{helper_type}"
         resp = requests.post(url, headers=self._headers(), json=payload, timeout=5)
         resp.raise_for_status()
         return resp.json()

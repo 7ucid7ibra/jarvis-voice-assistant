@@ -77,6 +77,8 @@ Default settings are stored in `jarvis_assistant/config.py`:
 - **TTS Volume**: 1.0 (max)
 
 Settings can be changed via the GUI settings dialog and are persisted to `settings.json`.
+Sensitive values (`ha_token`, `api_key`, `telegram_bot_token`, `telegram_chat_id`) are stored in macOS Keychain and are removed from `settings.json`.
+Environment variables still override stored secrets.
 
 ## Project Structure
 
@@ -137,6 +139,7 @@ Then run `./scripts/start.sh` again.
 - **piper-tts**: High-quality local text-to-speech
 - **pyttsx3**: Non-macOS fallback text-to-speech
 - **requests**: HTTP client for Ollama API
+- **keyring**: Secure secret storage via macOS Keychain
 
 ## Verification
 
@@ -158,6 +161,11 @@ Home Assistant integration is environment-dependent. Run it only when your HA se
 ```bash
 python test_ha_connection.py
 ```
+
+Manual secret-storage check:
+1. Enter HA/API/Telegram credentials in the Settings dialog and save.
+2. Restart the app and confirm credentials are still available.
+3. Open `settings.json` and confirm secret keys are absent.
 
 ## Performance
 

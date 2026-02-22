@@ -31,15 +31,17 @@ def parse_delay_seconds(user_text: str, now: datetime) -> int:
 
 def is_multi_domain_request(user_text: str, entities: list[dict[str, str]]) -> bool:
     text = (user_text or "").lower()
+    text_compact = re.sub(r"[\s_\-]+", "", text)
     if "all lights" in text or "all light" in text or "alle lichter" in text:
         return False
 
     matched_domains = set()
     for ent in entities:
-        name = (ent.get("name") or "").lower()
+        name = (ent.get("name") or "").lower().strip()
+        name_compact = re.sub(r"[\s_\-]+", "", name) if name else ""
         entity_id = (ent.get("entity_id") or "").lower()
         suffix = entity_id.split(".")[-1] if entity_id else ""
-        if name and name in text:
+        if (name and name in text) or (name_compact and name_compact in text_compact):
             matched_domains.add(ent.get("domain"))
         elif suffix and re.search(rf"\b{re.escape(suffix)}\b", text):
             matched_domains.add(ent.get("domain"))
@@ -48,3 +50,45 @@ def is_multi_domain_request(user_text: str, entities: list[dict[str, str]]) -> b
         matched_domains.add("input_number")
 
     return len(matched_domains) > 1
+
+
+def _is_unknown_state(value: str | None) -> bool:
+    state = (value or "").strip().lower()
+    return state in {"", "unknown", "unavailable", "none", "null"}
+
+
+def state_matches_action(
+    service: str,
+    initial_state: str | None,
+    new_state: str | None,
+    value: int | float | str | None = None,
+    tolerance: float = 0.001,
+) -> bool:
+    """
+    Returns True if the observed state is consistent with the requested action.
+    """
+    service = (service or "").strip().lower()
+    initial = (initial_state or "").strip().lower()
+    current = (new_state or "").strip().lower()
+
+    if service == "set_value":
+        try:
+            expected_val = float(value)
+            actual_val = float(new_state)
+            return abs(actual_val - expected_val) <= tolerance
+        except Exception:
+            return False
+
+    if service == "turn_on":
+        return current == "on"
+
+    if service == "turn_off":
+        return current == "off"
+
+    if service == "toggle":
+        if initial in {"on", "off"}:
+            expected = "off" if initial == "on" else "on"
+            return current == expected
+        return not _is_unknown_state(new_state)
+
+    return False

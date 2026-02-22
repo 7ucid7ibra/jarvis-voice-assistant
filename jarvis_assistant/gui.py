@@ -372,8 +372,12 @@ class ResourceMonitor(QWidget):
         
     def _fetch_gpu(self):
         try:
-            cmd = "ioreg -r -c IOAccelerator | grep -E 'Device Utilization %' | head -n 1"
-            completed = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=False)
+            completed = subprocess.run(
+                ["ioreg", "-r", "-c", "IOAccelerator"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             output = completed.stdout or ""
             match = re.search(r'"Device Utilization %"=(\d+)', output)
             if match:
@@ -620,6 +624,9 @@ class SettingsDialog(QDialog):
         self.api_key_edit.setPlaceholderText("API Key...")
         self._style_input(self.api_key_edit)
         layout.addWidget(self.api_key_edit)
+        llm_secret_note = QLabel("Secrets entered here are stored in macOS Keychain, not settings.json.")
+        llm_secret_note.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(llm_secret_note)
 
         # Model Section
         layout.addSpacing(5)
@@ -841,6 +848,9 @@ class SettingsDialog(QDialog):
         self._style_input(self.telegram_chat_id_edit)
         layout.addWidget(QLabel("Chat ID"))
         layout.addWidget(self.telegram_chat_id_edit)
+        secret_note = QLabel("Secrets entered here are stored in macOS Keychain, not settings.json.")
+        secret_note.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(secret_note)
 
         layout.addSpacing(12)
         layout.addWidget(self._make_header("Web Search"))
@@ -1072,6 +1082,15 @@ class SettingsDialog(QDialog):
             cfg.telegram_chat_id = self.telegram_chat_id_edit.text()
         if hasattr(self, "web_search_checkbox"):
             cfg.web_search_enabled = self.web_search_checkbox.isChecked()
+
+        entered_secrets = [
+            self.api_key_edit.text().strip() if hasattr(self, "api_key_edit") else "",
+            self.ha_token_edit.text().strip() if hasattr(self, "ha_token_edit") else "",
+            self.telegram_token_edit.text().strip() if hasattr(self, "telegram_token_edit") else "",
+            self.telegram_chat_id_edit.text().strip() if hasattr(self, "telegram_chat_id_edit") else "",
+        ]
+        if any(entered_secrets) and not cfg.keychain_available:
+            self._show_keychain_warning()
         
         cfg.save()
         logger.info(f"Settings saved to: {cfg.tts_voice_id}")
@@ -1083,6 +1102,19 @@ class SettingsDialog(QDialog):
                  logger.error(f"Could not switch profile: {e}")
         
         self.accept()
+
+    def _show_keychain_warning(self):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Keychain Unavailable")
+        msg.setText(
+            "Secure secret storage is currently unavailable. "
+            "Set secrets with environment variables until Keychain is available."
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.setModal(False)
+        msg.show()
+        self._keychain_warning = msg
 
 
     def _update_piper_quality_visibility(self):
@@ -1383,8 +1415,6 @@ class MainWindow(QMainWindow):
         # Add side spacing for squircle corners
         header.setContentsMargins(35, 10, 35, 0)
         
-        header.setContentsMargins(35, 10, 35, 0)
-        
         # Replaced custom widget for glowing letters
         self.title_label = InteractiveTitleLabel()
         
@@ -1503,8 +1533,6 @@ class MainWindow(QMainWindow):
         header.addWidget(settings_btn)
         header.addWidget(close_btn)
         layout.addLayout(header)
-        header.addWidget(close_btn)
-        layout.addLayout(header)
         # removed addStretch here to let screen_frame expand
 
         # Screen Area (Inset LCD with Gloss Overlay)
@@ -1557,7 +1585,7 @@ class MainWindow(QMainWindow):
                 border: 1px solid #444;
                 border-radius: 8px;
                 padding: 10px 15px;
-                font-family: 'SF Mono', Menlo, Monaco, monospace;
+                font-family: Menlo, Monaco, 'Courier New', monospace;
                 font-size: 13px;
                 margin-bottom: 10px;
             }}
@@ -1573,12 +1601,12 @@ class MainWindow(QMainWindow):
         
         self.status_label = QLabel("SYSTEM IDLE")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet(f"color: #666; font-family: 'SF Mono', Menlo, Monaco, monospace; font-weight: bold; font-size: 11px; margin-top: 10px; letter-spacing: 1px;")
+        self.status_label.setStyleSheet(f"color: #666; font-family: Menlo, Monaco, 'Courier New', monospace; font-weight: bold; font-size: 11px; margin-top: 10px; letter-spacing: 1px;")
         deck_layout.addWidget(self.status_label)
 
         self.response_timer_label = QLabel("")
         self.response_timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
+        self.response_timer_label.setStyleSheet("color: #777; font-family: Menlo, Monaco, 'Courier New', monospace; font-size: 10px;")
         self.response_timer_label.setVisible(False)
         # Position as overlay instead of in layout
         self.response_timer_label.setParent(self.casing)  # Parent to casing for reliable overlay
@@ -1590,7 +1618,6 @@ class MainWindow(QMainWindow):
         self._response_timer.setInterval(100)
         self._response_timer.timeout.connect(self._update_response_timer)
         
-        layout.addLayout(deck_layout)
         layout.addLayout(deck_layout)
         # layout.addStretch() # Removed to compact bottom
         
@@ -1762,13 +1789,13 @@ class MainWindow(QMainWindow):
                 self.response_timer_label.setText("0.0s")
                 self._position_response_timer()
                 self.response_timer_label.setVisible(True)
-                self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
+                self.response_timer_label.setStyleSheet("color: #777; font-family: Menlo, Monaco, 'Courier New', monospace; font-size: 10px;")
                 self._response_timer.start()
         elif any(k in upper for k in stop_keys):
             if self._response_timer.isActive():
                 self._response_timer.stop()
             self.response_timer_label.setVisible(False)
-            self.response_timer_label.setStyleSheet("color: #777; font-family: 'SF Mono', Menlo, Monaco, monospace; font-size: 10px;")
+            self.response_timer_label.setStyleSheet("color: #777; font-family: Menlo, Monaco, 'Courier New', monospace; font-size: 10px;")
         self._position_response_timer()
         txt = text.upper()
         

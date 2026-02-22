@@ -20,11 +20,11 @@ class LLMWorker(QObject):
     def __init__(self):
         super().__init__()
         self.tried_start_ollama = False
-        self._cancel_requested = False
+        self._cancel_event = threading.Event()
 
     def cancel_download(self):
         """Request cancellation of current download."""
-        self._cancel_requested = True
+        self._cancel_event.set()
 
     def generate(self, messages: list[dict], format: str = "json"):
         """
@@ -102,10 +102,10 @@ class LLMWorker(QObject):
             return {"status": "error", "error": "Ollama not running"}
             
         try:
-            self._cancel_requested = False 
+            self._cancel_event.clear()
             response = requests.post(url, json=payload, stream=True, timeout=300) # Increased timeout for large models
             response.raise_for_status()
-            
+
             for line in response.iter_lines():
                 if line:
                     try:
@@ -113,18 +113,18 @@ class LLMWorker(QObject):
                         status = data.get("status", "")
                         total = data.get("total", 0)
                         completed = data.get("completed", 0)
-                        
+
                         pct = -1
                         if total > 0:
                             pct = int((completed / total) * 100)
                             status = f"{status} ({pct}%)"
-                            
+
                         self.progress.emit(status, pct)
                     except json.JSONDecodeError:
                         continue
-                
+
                 # Check cancellation flag
-                if self._cancel_requested:
+                if self._cancel_event.is_set():
                     self.progress.emit("Download Cancelled.", -1)
                     return {"status": "cancelled"}
             
