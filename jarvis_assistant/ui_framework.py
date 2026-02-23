@@ -58,6 +58,7 @@ class BioMechCasing(QFrame):
         self.squircle = squircle
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.draw_outer_edge = False
+        self.rounded_rect_radius = 52.0
         
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -65,13 +66,14 @@ class BioMechCasing(QFrame):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         
         rect = QRectF(self.rect())
-        rect.adjust(2, 2, -2, -2) 
+        # Slightly larger inset keeps anti-aliased edges inside the translucent window surface.
+        rect.adjust(3, 3, -3, -3)
         
         if self.squircle:
             path = get_squircle_path(rect, 0, n=4.0)
         else:
             path = QPainterPath()
-            path.addRoundedRect(rect, 20, 20)
+            path.addRoundedRect(rect, self.rounded_rect_radius, self.rounded_rect_radius)
             
         base_col = self.bg_color if hasattr(self, 'bg_color') else QColor(COLOR_CHASSIS_MID)
         
@@ -105,11 +107,32 @@ class BioMechCasing(QFrame):
         
         painter.restore()
 
+        # 3. Anti-fringe edge cover.
+        # Draw a thin opaque stroke just inside the casing path to prevent dark halo artifacts
+        # from semi-transparent edge pixels on macOS frameless translucent windows.
+        edge_cover_rect = rect.adjusted(0.7, 0.7, -0.7, -0.7)
+        if self.squircle:
+            edge_cover_path = get_squircle_path(edge_cover_rect, 0, n=4.0)
+        else:
+            edge_cover_path = QPainterPath()
+            edge_cover_path.addRoundedRect(edge_cover_rect, self.rounded_rect_radius, self.rounded_rect_radius)
+        edge_cover_color = QColor(base_col)
+        edge_cover_color.setAlpha(255)
+        edge_cover_pen = QPen(edge_cover_color, 1.0)
+        edge_cover_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(edge_cover_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(edge_cover_path)
+
         if self.draw_outer_edge:
             # 3. Optional outer edge highlight (disabled by default to avoid visible casing line artifacts)
             edge_path = get_squircle_path(rect.adjusted(0.5, 0.5, -0.5, -0.5), 0, n=4.0) if self.squircle else QPainterPath()
             if not self.squircle:
-                edge_path.addRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 20, 20)
+                edge_path.addRoundedRect(
+                    rect.adjusted(0.5, 0.5, -0.5, -0.5),
+                    self.rounded_rect_radius,
+                    self.rounded_rect_radius,
+                )
 
             edge_pen_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
             edge_pen_grad.setColorAt(0, QColor(255, 255, 255, 150))

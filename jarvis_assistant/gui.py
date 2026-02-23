@@ -15,6 +15,7 @@ from PyQt6.QtGui import (
 )
 import threading
 import os
+import sys
 import psutil
 import subprocess
 import re
@@ -287,15 +288,24 @@ class InteractiveTitleLabel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.text = cfg.assistant_name
-        self.setFixedSize(140, 40)
         self.mouse_pos = QPoint(-100, -100)
         self.setMouseTracking(True)
         self.letters = list(self.text)
-        self.font = QFont("Impact", 24)
+        self.font = QFont("Impact", 26)
+        self._letter_gap = 4
+        self._update_geometry()
+
+    def _update_geometry(self):
+        fm = QFontMetrics(self.font)
+        char_width_total = sum(fm.horizontalAdvance(ch) for ch in self.letters)
+        width = char_width_total + (self._letter_gap * max(0, len(self.letters) - 1)) + 14
+        width = max(150, min(260, width))
+        self.setFixedSize(width, 44)
 
     def update_text(self):
         self.text = cfg.assistant_name
         self.letters = list(self.text)
+        self._update_geometry()
         self.update()
         
     def mouseMoveEvent(self, event):
@@ -312,8 +322,8 @@ class InteractiveTitleLabel(QWidget):
         painter.setFont(self.font)
         
         # Base settings
-        start_x = 0
-        gap = 4 # Pixel gap between letters
+        start_x = 2
+        gap = self._letter_gap
         fm = QFontMetrics(self.font)
         
         current_x = start_x
@@ -323,7 +333,7 @@ class InteractiveTitleLabel(QWidget):
             
             # center of this letter for hit testing
             center_x = current_x + (char_width / 2)
-            y = 30 # Baseline
+            y = 33 # Baseline
             center_y = y - 10
             
             dist = ((self.mouse_pos.x() - center_x)**2 + (self.mouse_pos.y() - center_y)**2)**0.5
@@ -1380,9 +1390,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.default_height = 650
+        self.default_height = 640
         self.collapsed_height = 230
-        self.resize(560, self.default_height + 60) # Slightly larger for margins
+        self.resize(560, self.default_height + 52)
         
         # 1. Transparent Container to hold the Casing + Shadow
         container = QWidget()
@@ -1391,29 +1401,32 @@ class MainWindow(QMainWindow):
         
         # 2. Layout with margins for the shadow
         container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(30, 30, 30, 50) # Space for shadow
+        container_layout.setContentsMargins(22, 22, 22, 34)
         
         # 3. The Actionable Casing
-        self.casing = BioMechCasing(squircle=True)
+        self.casing = BioMechCasing(squircle=False)
         container_layout.addWidget(self.casing)
         
-        # Add deep drop shadow for floating effect
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(50)
-        shadow.setXOffset(0)
-        shadow.setYOffset(15)
-        shadow.setColor(QColor(0, 0, 0, 140)) # Slightly softer shadow
-        self.casing.setGraphicsEffect(shadow)
+        # macOS can show a dark contour artifact around translucent frameless widgets
+        # when using an external drop shadow effect. Disable it there for a clean edge.
+        if sys.platform != "darwin":
+            shadow = QGraphicsDropShadowEffect(self)
+            shadow.setBlurRadius(36)
+            shadow.setXOffset(0)
+            shadow.setYOffset(10)
+            shadow.setColor(QColor(0, 0, 0, 95))
+            self.casing.setGraphicsEffect(shadow)
+        else:
+            self.casing.setGraphicsEffect(None)
         
         # Layout inside the casing
         layout = QVBoxLayout(self.casing)
-        layout.setSpacing(10)
-        layout.setContentsMargins(30, 40, 30, 30) # Internal margins
+        layout.setSpacing(8)
+        layout.setContentsMargins(22, 28, 22, 20)
         
         # Header
         header = QHBoxLayout()
-        # Add side spacing for squircle corners
-        header.setContentsMargins(35, 10, 35, 0)
+        header.setContentsMargins(12, 6, 12, 0)
         
         # Replaced custom widget for glowing letters
         self.title_label = InteractiveTitleLabel()
