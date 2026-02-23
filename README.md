@@ -51,6 +51,14 @@ The script will automatically:
 
 That's it! The app will open with a GUI.
 
+### macOS Quarantine (DMG installs)
+
+If macOS blocks launch because the app is unsigned, install the app to `/Applications` and run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Jarvis Assistant.app"
+```
+
 ## Usage
 
 1. **Start the app**: Run `./scripts/start.sh`
