@@ -1,6 +1,7 @@
 import json
 import os
 
+from . import app_paths
 from . import secret_store
 from .utils import logger
 
@@ -35,9 +36,8 @@ COLOR_BUBBLE_ASSISTANT = "#0f1520"
 COLOR_TEXT_PRIMARY = "#ffffff"
 COLOR_TEXT_SECONDARY = "#888888"
 
-# Resolve absolute path for settings.json
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SETTINGS_FILE = os.environ.get("JARVIS_SETTINGS_FILE", os.path.join(BASE_DIR, "settings.json"))
+# Resolve settings file from writable app data path by default.
+SETTINGS_FILE = os.environ.get("JARVIS_SETTINGS_FILE", app_paths.settings_file())
 SECRET_KEYS = {"ha_token", "api_key", "telegram_bot_token", "telegram_chat_id"}
 SECRET_ENV_MAP = {
     "ha_token": "HA_TOKEN",
@@ -49,6 +49,7 @@ SECRET_ENV_MAP = {
 
 class Config:
     def __init__(self, settings_file: str = SETTINGS_FILE):
+        app_paths.migrate_legacy_data_once()
         self._settings_file = settings_file
         self._settings = self._load_settings()
         self._migrate_legacy_secrets()
@@ -282,6 +283,9 @@ class Config:
     def save(self):
         try:
             self._scrub_secret_keys()
+            parent_dir = os.path.dirname(self._settings_file)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
             with open(self._settings_file, "w") as f:
                 json.dump(self._settings, f, indent=2)
         except Exception as e:

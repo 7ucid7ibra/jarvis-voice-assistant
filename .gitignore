@@ -24,6 +24,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!Jarvis Assistant.spec
 *.exe
 *.app
 

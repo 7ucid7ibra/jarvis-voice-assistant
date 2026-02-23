@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 from .config import cfg
+from .app_paths import models_dir
 from .utils import logger
 
 # Constants for Piper
@@ -122,8 +123,9 @@ class TTSWorker(QObject):
     def _set_piper_paths(self, voice_id: str) -> None:
         info = self._get_piper_voice_info(voice_id)
         model_name = info["model"]
-        self.piper_model_path = os.path.join(os.getcwd(), "models", "tts", f"{model_name}.onnx")
-        self.piper_config_path = os.path.join(os.getcwd(), "models", "tts", f"{model_name}.onnx.json")
+        tts_model_dir = os.path.join(models_dir(), "tts")
+        self.piper_model_path = os.path.join(tts_model_dir, f"{model_name}.onnx")
+        self.piper_config_path = os.path.join(tts_model_dir, f"{model_name}.onnx.json")
 
     def _ensure_piper_models(self, voice_id: str | None, background: bool = True):
         """Check if Piper models exist for the requested voice, download if not."""
@@ -156,8 +158,9 @@ class TTSWorker(QObject):
             model_name = info["model"]
             base_url = info["base_url"]
             files = [f"{model_name}.onnx", f"{model_name}.onnx.json"]
+            tts_model_dir = os.path.join(models_dir(), "tts")
             for filename in files:
-                path = os.path.join(os.getcwd(), "models", "tts", filename)
+                path = os.path.join(tts_model_dir, filename)
                 if not os.path.exists(path):
                     url = base_url + filename
                     logger.info(f"Downloading {filename} from {url}...")

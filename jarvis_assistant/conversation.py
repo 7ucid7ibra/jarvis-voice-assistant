@@ -4,6 +4,8 @@ import time
 import json
 import os
 
+from . import app_paths
+
 Role = Literal["user", "assistant", "system"]
 
 @dataclass
@@ -17,13 +19,16 @@ class Message:
             self.timestamp = time.time()
 
 class Conversation:
-    def __init__(self, history_file: str = os.path.join("history", "conversation_history.json")):
+    def __init__(self, history_file: str = app_paths.profiles_history_file("default")):
         self.messages: List[Message] = []
         self.history_file = history_file
         # Ensure directory exists
         parent_dir = os.path.dirname(self.history_file)
         if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
+            try:
+                os.makedirs(parent_dir, exist_ok=True)
+            except Exception as e:
+                print(f"Failed to prepare history directory '{parent_dir}': {e}")
     # System prompt is now handled by agents
 
 

@@ -2,11 +2,19 @@ import json
 import os
 from typing import Dict, List, Optional
 
+from . import app_paths
+
+
 class MemoryManager:
-    def __init__(self, memory_file: str = os.path.join("memory", "memory.json")):
+    def __init__(self, memory_file: str = app_paths.profiles_memory_file("default")):
         self.memory_file = memory_file
         # Ensure directory exists
-        os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
+        parent_dir = os.path.dirname(self.memory_file)
+        if parent_dir:
+            try:
+                os.makedirs(parent_dir, exist_ok=True)
+            except Exception as e:
+                print(f"Failed to prepare memory directory '{parent_dir}': {e}")
         self.facts: Dict[str, str] = {}
         self.load()
 

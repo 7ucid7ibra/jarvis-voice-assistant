@@ -2,12 +2,19 @@ import logging
 import sys
 import os
 
+from . import app_paths
+
+
 def setup_logging():
-    log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "jarvis.log")
-    handlers = [
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(log_path, mode="a", encoding="utf-8")
-    ]
+    log_path = os.path.join(app_paths.logs_dir(), "jarvis.log")
+    handlers = [logging.StreamHandler(sys.stdout)]
+    try:
+        handlers.append(logging.FileHandler(log_path, mode="a", encoding="utf-8"))
+    except Exception as exc:
+        print(
+            f"Warning: failed to initialize file logging at '{log_path}': {exc}",
+            file=sys.stderr,
+        )
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

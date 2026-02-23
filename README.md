@@ -23,6 +23,19 @@ A fully local, "Jarvis-style" voice assistant for macOS with a modern PyQt6 GUI.
 
 ## Installation
 
+### Install from DMG (Recommended for users)
+
+1. Download the latest `.dmg` from Releases.
+2. Open the DMG.
+3. Drag `Jarvis Assistant.app` to `Applications`.
+4. Launch from `Applications`.
+
+If macOS blocks launch because the app is unsigned, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Jarvis Assistant.app"
+```
+
 ### Prerequisites
 
 Homebrew is required for system dependencies. Ollama is installed automatically if missing.
@@ -32,7 +45,7 @@ Homebrew is required for system dependencies. Ollama is installed automatically 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-### Quick Start
+### Quick Start (From source)
 
 1. Clone or download the repository.
 2. Run the setup and launcher script:
@@ -50,14 +63,6 @@ The script will automatically:
 6. Launch the application
 
 That's it! The app will open with a GUI.
-
-### macOS Quarantine (DMG installs)
-
-If macOS blocks launch because the app is unsigned, install the app to `/Applications` and run:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Jarvis Assistant.app"
-```
 
 ## Usage
 
@@ -84,19 +89,19 @@ Default settings are stored in `jarvis_assistant/config.py`:
 - **TTS Rate**: 190 words/minute
 - **TTS Volume**: 1.0 (max)
 
-Settings can be changed via the GUI settings dialog and are persisted to `settings.json`.
+Settings can be changed via the GUI settings dialog and are persisted to:
+- `~/Library/Application Support/Jarvis Assistant/settings.json`
+
 Sensitive values (`ha_token`, `api_key`, `telegram_bot_token`, `telegram_chat_id`) are stored in macOS Keychain and are removed from `settings.json`.
 Environment variables still override stored secrets.
 
 ## Project Structure
 
 ```
-VoiceAssistantMac/
+Jarvis/
 ├── scripts/
-│   └── start.sh                # Launcher script
-├── docs/
-│   ├── git_workflow.md         # Git workflow rules
-│   └── HANDOFF.md              # Project handoff document
+│   ├── start.sh                # Source launcher script
+│   └── build_release_dmg.sh    # DMG build helper
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
 └── jarvis_assistant/
@@ -157,23 +162,10 @@ Run from project root:
 python -m py_compile jarvis_assistant/*.py
 ```
 
-For regression tests:
-
-```bash
-pip install -r requirements-dev.txt
-pytest -q
-```
-
-Home Assistant integration is environment-dependent. Run it only when your HA server is reachable:
-
-```bash
-python test_ha_connection.py
-```
-
 Manual secret-storage check:
 1. Enter HA/API/Telegram credentials in the Settings dialog and save.
 2. Restart the app and confirm credentials are still available.
-3. Open `settings.json` and confirm secret keys are absent.
+3. Open `~/Library/Application Support/Jarvis Assistant/settings.json` and confirm secret keys are absent.
 
 ## Performance
 
@@ -184,8 +176,10 @@ On a 2019 Intel MacBook Pro (8-core i9, 16GB RAM):
 
 ## Privacy
 
-All processing happens locally on your machine. No data is sent to external servers. Conversation history is stored in `conversation_history.json` in the project directory.
+All processing happens locally on your machine. No data is sent to external servers. Conversation history, memory, logs, and TTS models are stored under:
+
+- `~/Library/Application Support/Jarvis Assistant/`
 
 ## License
 
-This is a prototype project. Use at your own discretion.
+See `LICENSE`.

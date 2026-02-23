@@ -11,6 +11,7 @@ from .llm_client import LLMWorker
 from .tts import TTSWorker
 from .ha_client import HomeAssistantClient
 from .memory import MemoryManager
+from .app_paths import profiles_history_file, profiles_memory_file
 from .intent_utils import (
     parse_delay_seconds,
     is_multi_domain_request,
@@ -151,14 +152,10 @@ class JarvisController(QObject):
     def init_profile_data(self):
         profile = cfg.current_profile
         logger.info(f"Initializing profile: {profile}")
-        
-        # Ensure directories exist
-        os.makedirs("memory", exist_ok=True)
-        os.makedirs("history", exist_ok=True)
-        
-        mem_file = os.path.join("memory", f"memory_{profile}.json")
-        hist_file = os.path.join("history", f"history_{profile}.json")
-        
+
+        mem_file = profiles_memory_file(profile)
+        hist_file = profiles_history_file(profile)
+
         self.memory_manager = MemoryManager(memory_file=mem_file)
         self.conversation = Conversation(history_file=hist_file)
         self.conversation.load()
