@@ -64,6 +64,23 @@ The script will automatically:
 
 That's it! The app will open with a GUI.
 
+### Release Prerequisites (Maintainers)
+
+When packaging a release DMG:
+1. Use Python 3.11+.
+2. Verify before building:
+
+```bash
+python --version
+```
+
+3. Build with:
+
+```bash
+./scripts/build_release_dmg.sh v1.0.6 x86_64   # Intel host
+./scripts/build_release_dmg.sh v1.0.6 arm64    # Apple Silicon host
+```
+
 ## Usage
 
 1. **Start the app**: Run `./scripts/start.sh`

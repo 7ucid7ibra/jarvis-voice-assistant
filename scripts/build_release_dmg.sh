@@ -20,6 +20,13 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   exit 1
 fi
 
+if ! "${PYTHON_BIN}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+  echo "Python 3.11+ is required for release packaging."
+  echo "Current interpreter: $("${PYTHON_BIN}" -c 'import sys; print(sys.version.split()[0])')"
+  echo "Create the venv with Python 3.11 and retry."
+  exit 1
+fi
+
 if [[ ! -f "${SPEC_FILE}" ]]; then
   echo "Spec file missing: ${SPEC_FILE}"
   exit 1
