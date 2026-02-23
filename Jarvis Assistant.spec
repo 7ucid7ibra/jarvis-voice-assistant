@@ -4,6 +4,8 @@ import os
 import platform
 import subprocess
 import sys
+import importlib.util
+from pathlib import Path
 
 
 def _is_universal_python() -> bool:
@@ -24,12 +26,36 @@ if REQUESTED_ARCH == "universal2" and not _is_universal_python():
 else:
     TARGET_ARCH = REQUESTED_ARCH
 
+
+def _piper_data_files() -> list[tuple[str, str]]:
+    data_entries: list[tuple[str, str]] = []
+    try:
+        spec = importlib.util.find_spec("piper")
+        if not spec or not spec.origin:
+            print("[Jarvis build] Piper package not found; skipping espeak-ng-data bundle.")
+            return data_entries
+
+        piper_pkg_dir = Path(spec.origin).resolve().parent
+        espeak_data_dir = piper_pkg_dir / "espeak-ng-data"
+        if espeak_data_dir.exists():
+            data_entries.append((str(espeak_data_dir), "piper/espeak-ng-data"))
+            print(f"[Jarvis build] Bundling Piper espeak data from {espeak_data_dir}")
+        else:
+            print(
+                f"[Jarvis build] Piper espeak-ng-data not found at {espeak_data_dir}; "
+                "packaged Piper may fail."
+            )
+    except Exception as exc:
+        print(f"[Jarvis build] Failed to resolve Piper espeak data: {exc}")
+    return data_entries
+
+
 a = Analysis(
     ['run.py'],
     pathex=['.'],
     binaries=[],
-    datas=[('jarvis_assistant/assets', 'jarvis_assistant/assets')],
-    hiddenimports=[],
+    datas=[('jarvis_assistant/assets', 'jarvis_assistant/assets'), *_piper_data_files()],
+    hiddenimports=['piper.voice'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

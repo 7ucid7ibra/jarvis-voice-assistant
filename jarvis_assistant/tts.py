@@ -63,6 +63,49 @@ class TTSWorker(QObject):
         self._afplay_lock = threading.Lock()
         self._ensure_piper_models(self._get_piper_voice_id(), background=True)
 
+    def _iter_piper_espeak_candidates(self) -> list[Path]:
+        candidates: list[Path] = []
+
+        def add_candidate(path: Path | None) -> None:
+            if path is None:
+                return
+            path = path.expanduser()
+            if path not in candidates:
+                candidates.append(path)
+
+        if getattr(sys, "frozen", False):
+            executable = Path(sys.executable).resolve()
+            roots: list[Path] = [executable.parent]
+            if executable.parent.name == "MacOS":
+                contents_dir = executable.parent.parent
+                roots.extend(
+                    [
+                        contents_dir,
+                        contents_dir / "Resources",
+                        contents_dir / "Frameworks",
+                    ]
+                )
+
+            meipass = getattr(sys, "_MEIPASS", "")
+            if meipass:
+                roots.append(Path(meipass))
+
+            for root in roots:
+                add_candidate(root / "piper" / "espeak-ng-data")
+                add_candidate(root / "espeak-ng-data")
+
+        spec = importlib.util.find_spec("piper")
+        if spec and spec.origin:
+            add_candidate(Path(spec.origin).resolve().parent / "espeak-ng-data")
+
+        return candidates
+
+    def _resolve_piper_espeak_dir(self) -> Path | None:
+        for candidate in self._iter_piper_espeak_candidates():
+            if (candidate / "phontab").exists():
+                return candidate
+        return None
+
     def _piper_env(self) -> dict[str, str]:
         """
         Build environment for Piper execution.
@@ -70,12 +113,9 @@ class TTSWorker(QObject):
         We create a stable no-space symlink in /tmp and point ESPEAK_DATA_PATH there.
         """
         env = os.environ.copy()
-        spec = importlib.util.find_spec("piper")
-        if not spec or not spec.origin:
-            return env
-
-        data_dir = Path(spec.origin).resolve().parent / "espeak-ng-data"
-        if not data_dir.exists():
+        data_dir = self._resolve_piper_espeak_dir()
+        if data_dir is None:
+            logger.warning("Piper espeak data not found in runtime paths; Piper may be unavailable.")
             return env
 
         espeak_path = str(data_dir)
@@ -190,7 +230,10 @@ class TTSWorker(QObject):
     def init_engine(self):
         if self.use_piper:
             try:
-                self._piper_env()
+                piper_env = self._piper_env()
+                espeak_path = piper_env.get("ESPEAK_DATA_PATH")
+                if not espeak_path or not (Path(espeak_path) / "phontab").exists():
+                    raise RuntimeError("Piper espeak-ng-data/phontab missing in runtime environment")
                 from piper.voice import PiperVoice
                 self.engine = PiperVoice.load(self.piper_model_path, config_path=self.piper_config_path)
                 logger.info("Piper engine initialized.")
@@ -276,43 +319,7 @@ class TTSWorker(QObject):
                 raise RuntimeError("Piper CLI failed.")
             return
 
-        if importlib.util.find_spec("piper") is not None:
-            logger.info("Using Piper module via python -m piper.")
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "piper",
-                    "--model",
-                    self.piper_model_path,
-                    "--config",
-                    self.piper_config_path,
-                    "--output_file",
-                    temp_path,
-                    "--length-scale",
-                    str(length_scale),
-                ],
-                input=text,
-                text=True,
-                env=piper_env,
-                check=True,
-            )
-            if proc.returncode != 0:
-                raise RuntimeError("Piper module CLI failed.")
-            return
-
-        if not self.engine:
-            raise RuntimeError("Piper engine not initialized.")
-
-        with wave.open(temp_path, "wb") as wav_file:
-            sample_rate = None
-            if hasattr(self.engine, "config"):
-                sample_rate = getattr(self.engine.config, "sample_rate", None)
-            if sample_rate:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(sample_rate)
-            self.engine.synthesize(text, wav_file)
+        raise RuntimeError("No Piper CLI available after in-process synthesis failure.")
 
     def speak(self, text: str):
         logger.info(f"TTS Request: '{text}' | Vol: {cfg.tts_volume} | Voice: {cfg.tts_voice_id}")

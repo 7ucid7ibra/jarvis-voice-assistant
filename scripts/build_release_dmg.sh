@@ -55,6 +55,14 @@ if [[ ! -d "${APP_BUNDLE_PATH}" ]]; then
   exit 1
 fi
 
+PHONTAB_PATH="$(find "${APP_BUNDLE_PATH}" -path "*espeak-ng-data/phontab" -print -quit 2>/dev/null || true)"
+if [[ -z "${PHONTAB_PATH}" ]]; then
+  echo "Build failed: Piper espeak-ng-data/phontab not found in app bundle."
+  echo "Expected bundled runtime data for Piper is missing."
+  exit 1
+fi
+echo "Verified Piper espeak data: ${PHONTAB_PATH}"
+
 APP_EXECUTABLE="${APP_BUNDLE_PATH}/Contents/MacOS/${APP_NAME}"
 if [[ -f "${APP_EXECUTABLE}" ]]; then
   APP_FILE_DESC="$(file "${APP_EXECUTABLE}" || true)"
