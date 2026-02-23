@@ -11,9 +11,14 @@ from .llm_client import LLMWorker
 from .tts import TTSWorker
 from .ha_client import HomeAssistantClient
 from .memory import MemoryManager
-from .intent_utils import parse_delay_seconds, is_multi_domain_request, state_matches_action
+from .intent_utils import (
+    parse_delay_seconds,
+    is_multi_domain_request,
+    looks_like_home_control_request,
+    state_matches_action,
+)
 from .config import cfg
-from .utils import logger, extract_json
+from .utils import logger, extract_json, extract_tool_call_query
 import json
 import time
 from datetime import datetime
@@ -773,14 +778,6 @@ class JarvisController(QObject):
         self._ack_index = 0
         self._start_ack_timer()
         self._start_llm_timeout("intent")
-
-        if self._is_multi_domain_request(user_text):
-            reply = (
-                "I can handle one type at a time. Please ask for each device separately. "
-                "For example, first the heater, then the window or lights."
-            )
-            self._reply_direct(reply)
-            return
         
         # Get history
         history = self.conversation.get_ollama_messages()[-5:] # Last 5 messages
@@ -824,6 +821,43 @@ class JarvisController(QObject):
                 data = None
 
             if data is None:
+                tool_query = extract_tool_call_query(response, "web_search")
+                if tool_query:
+                    self._action_pending = True
+                    self.current_intent = {"intent": "web_search", "query": tool_query}
+                    result = self._web_search(tool_query)
+                    if result.get("status") == "success":
+                        self.current_action_taken = {
+                            "action": "web_search",
+                            "web_search_results": result.get("results", []),
+                            "query": result.get("query"),
+                        }
+                    else:
+                        self.current_action_taken = {
+                            "action": "web_search",
+                            "error": result.get("error") or "Search failed.",
+                        }
+                    self._maybe_schedule_short_ack()
+                    self.start_response_agent()
+                    return
+
+                # If the user asked for device control but intent output is plain text,
+                # do not allow a fake "done" confirmation with no executed action.
+                if looks_like_home_control_request(self.current_user_text, self._parse_entities()):
+                    is_de = cfg.language == "de"
+                    reply = (
+                        "Ich konnte den Steuerbefehl nicht sicher ausfuehren. "
+                        "Bitte wiederhole ihn kurz, zum Beispiel: 'Schalte die Tischlampe aus.'"
+                    ) if is_de else (
+                        "I could not safely execute that control command. "
+                        "Please repeat it clearly, for example: 'Turn off the table lamp.'"
+                    )
+                    logger.warning(
+                        "Rejected direct intent reply for control-like request without JSON intent."
+                    )
+                    self._reply_direct(reply)
+                    return
+
                 # Direct conversation reply from IntentAgent
                 self._cancel_ack_timer()
                 self._cancel_llm_timeout()
@@ -1309,6 +1343,25 @@ class JarvisController(QObject):
             return ""
         cleaned = text.strip()
         cleaned = unicodedata.normalize("NFKC", cleaned)
+        # Remove XML-like tool call blocks (e.g., minimax tool invocation markup).
+        cleaned = re.sub(
+            r"<minimax:tool_call>[\s\S]*?</minimax:tool_call>",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"<invoke[\s\S]*?</invoke>",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(
+            r"<parameter[\s\S]*?</parameter>",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
         # Remove fenced JSON command blocks that should never be spoken to the user.
         cleaned = re.sub(
             r"```(?:json)?\s*(\{[\s\S]*?\})\s*```",

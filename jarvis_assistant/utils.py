@@ -62,3 +62,23 @@ def extract_json(text: str) -> dict:
             continue
             
     raise ValueError("No valid JSON found in response")
+
+
+def extract_tool_call_query(text: str, tool_name: str = "web_search") -> str | None:
+    """
+    Extract a query parameter from XML-like tool call blocks, e.g.:
+    <invoke name="web_search"><parameter name="query">...</parameter></invoke>
+    """
+    if not text:
+        return None
+
+    pattern = (
+        rf"<invoke\s+name=[\"']{re.escape(tool_name)}[\"'][^>]*>"
+        rf"[\s\S]*?<parameter\s+name=[\"']query[\"'][^>]*>([\s\S]*?)</parameter>"
+        rf"[\s\S]*?</invoke>"
+    )
+    match = re.search(pattern, text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    query = (match.group(1) or "").strip()
+    return query or None

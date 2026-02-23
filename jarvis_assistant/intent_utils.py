@@ -52,6 +52,64 @@ def is_multi_domain_request(user_text: str, entities: list[dict[str, str]]) -> b
     return len(matched_domains) > 1
 
 
+def looks_like_home_control_request(user_text: str, entities: list[dict[str, str]]) -> bool:
+    text = (user_text or "").lower().strip()
+    if not text:
+        return False
+    text_compact = re.sub(r"[\s_\-]+", "", text)
+
+    has_action_keyword = any(
+        re.search(pattern, text)
+        for pattern in [
+            r"\b(turn|switch)\s+(on|off)\b",
+            r"\b(toggle|enable|disable|activate|deactivate)\b",
+            r"\b(set|dim|brighten)\b",
+            r"\b(ein|aus)schalt(?:e|en)?\b",
+            r"\bschalt(?:e|en)?\b",
+            r"\bmach(?:e|en)?\b.*\b(an|aus)\b",
+            r"\ban\b",
+            r"\baus\b",
+        ]
+    )
+    if not has_action_keyword:
+        return False
+
+    device_keywords = {
+        "light",
+        "lights",
+        "lamp",
+        "lampe",
+        "lichter",
+        "switch",
+        "steckdose",
+        "plug",
+        "tv",
+        "fernseher",
+        "heater",
+        "heizung",
+        "input_boolean",
+        "wohnzimmer",
+        "tischlampe",
+    }
+    if any(keyword in text for keyword in device_keywords):
+        return True
+
+    for ent in entities:
+        name = (ent.get("name") or "").lower().strip()
+        if name:
+            name_compact = re.sub(r"[\s_\-]+", "", name)
+            if name in text or (name_compact and name_compact in text_compact):
+                return True
+        entity_id = (ent.get("entity_id") or "").lower().strip()
+        if entity_id and entity_id in text:
+            return True
+        suffix = entity_id.split(".")[-1] if entity_id else ""
+        if suffix and re.search(rf"\b{re.escape(suffix)}\b", text):
+            return True
+
+    return False
+
+
 def _is_unknown_state(value: str | None) -> bool:
     state = (value or "").strip().lower()
     return state in {"", "unknown", "unavailable", "none", "null"}

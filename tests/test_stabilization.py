@@ -2,7 +2,12 @@ from datetime import datetime
 
 import pytest
 
-from jarvis_assistant.intent_utils import is_multi_domain_request, parse_delay_seconds, state_matches_action
+from jarvis_assistant.intent_utils import (
+    is_multi_domain_request,
+    looks_like_home_control_request,
+    parse_delay_seconds,
+    state_matches_action,
+)
 from jarvis_assistant.profile_paths import profile_file_paths, remove_profile_files
 
 
@@ -55,6 +60,27 @@ def test_is_multi_domain_request_handles_trailing_space_in_name():
     ]
     text = "schalte die sonnenblumenlampe aus und den fernseher an"
     assert is_multi_domain_request(text, entities) is True
+
+
+def test_looks_like_home_control_request_true_for_named_entity():
+    entities = [
+        {"name": "Tischlampe", "entity_id": "light.tischlampe", "domain": "light"},
+    ]
+    assert looks_like_home_control_request("Schalte bitte die Tischlampe aus.", entities) is True
+
+
+def test_looks_like_home_control_request_true_for_entity_id():
+    entities = [
+        {"name": "Kitchen Light", "entity_id": "light.kitchen_light", "domain": "light"},
+    ]
+    assert looks_like_home_control_request("turn off light.kitchen_light", entities) is True
+
+
+def test_looks_like_home_control_request_false_for_small_talk():
+    entities = [
+        {"name": "Tischlampe", "entity_id": "light.tischlampe", "domain": "light"},
+    ]
+    assert looks_like_home_control_request("Hey, was geht ab?", entities) is False
 
 
 def test_state_matches_action_turn_off():
