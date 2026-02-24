@@ -13,6 +13,7 @@ DIST_DIR="${PROJECT_ROOT}/dist"
 BUILD_DIR="${PROJECT_ROOT}/build"
 DMG_STAGE_DIR="${BUILD_DIR}/dmg_stage"
 APP_BUNDLE_PATH="${DIST_DIR}/${APP_NAME}.app"
+EXPECTED_BUNDLE_ID="com.7ucid7ibra.jarvisassistant"
 
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Python executable not found at ${PYTHON_BIN}"
@@ -62,6 +63,26 @@ if [[ -z "${PHONTAB_PATH}" ]]; then
   exit 1
 fi
 echo "Verified Piper espeak data: ${PHONTAB_PATH}"
+
+INFO_PLIST_PATH="${APP_BUNDLE_PATH}/Contents/Info.plist"
+if [[ ! -f "${INFO_PLIST_PATH}" ]]; then
+  echo "Build failed: Info.plist not found at ${INFO_PLIST_PATH}."
+  exit 1
+fi
+
+MIC_USAGE_DESC="$(/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "${INFO_PLIST_PATH}" 2>/dev/null || true)"
+if [[ -z "${MIC_USAGE_DESC}" ]]; then
+  echo "Build failed: NSMicrophoneUsageDescription missing in Info.plist."
+  exit 1
+fi
+
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${INFO_PLIST_PATH}" 2>/dev/null || true)"
+if [[ "${BUNDLE_ID}" != "${EXPECTED_BUNDLE_ID}" ]]; then
+  echo "Build failed: CFBundleIdentifier mismatch. Expected '${EXPECTED_BUNDLE_ID}', got '${BUNDLE_ID}'."
+  exit 1
+fi
+
+echo "Verified Info.plist microphone metadata and bundle id: ${BUNDLE_ID}"
 
 APP_EXECUTABLE="${APP_BUNDLE_PATH}/Contents/MacOS/${APP_NAME}"
 if [[ -f "${APP_EXECUTABLE}" ]]; then

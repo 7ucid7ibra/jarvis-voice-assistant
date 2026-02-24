@@ -95,5 +95,8 @@ app = BUNDLE(
     coll,
     name='Jarvis Assistant.app',
     icon='packaging/assets/icons/icon2.icns',
-    bundle_identifier=None,
+    bundle_identifier='com.7ucid7ibra.jarvisassistant',
+    info_plist={
+        'NSMicrophoneUsageDescription': 'Jarvis Assistant needs microphone access to capture voice commands.',
+    },
 )
