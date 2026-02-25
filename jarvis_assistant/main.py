@@ -1,7 +1,7 @@
 import sys
 import os
 import subprocess
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import QThread, QObject, pyqtSignal, QTimer
 
 from .gui import MainWindow, MicButton
@@ -1437,7 +1437,34 @@ class JarvisController(QObject):
         self.window.chat_input.setEnabled(True)
         self._start_wake_word_if_enabled()
 
+    def _handle_remote_ollama_unreachable(self, msg: str) -> bool:
+        prefix = f"{LLMWorker.REMOTE_UNREACHABLE_PREFIX}:"
+        if not isinstance(msg, str) or not msg.startswith(prefix):
+            return False
+
+        remote_url = msg[len(prefix):].strip()
+        choice = QMessageBox.question(
+            self.window,
+            "Remote Ollama Unreachable",
+            (
+                f"Remote Ollama is unreachable at\n{remote_url}\n\n"
+                "Switch to local Ollama (http://127.0.0.1:11434) for this session?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if choice == QMessageBox.StandardButton.Yes:
+            cfg.ollama_api_url = "http://127.0.0.1:11434"
+            self.window.set_status("Switched to local Ollama for this session")
+            logger.info("User accepted fallback to local Ollama endpoint")
+            return True
+
+        self.window.set_status("Remote Ollama unreachable")
+        return True
+
     def handle_error(self, msg):
+        if self._handle_remote_ollama_unreachable(msg):
+            return
         self._cancel_ack_timer()
         self._cancel_llm_timeout()
         self.window.set_status("Error")

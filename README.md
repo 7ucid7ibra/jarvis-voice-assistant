@@ -112,6 +112,13 @@ Settings can be changed via the GUI settings dialog and are persisted to:
 Sensitive values (`ha_token`, `api_key`, `telegram_bot_token`, `telegram_chat_id`) are stored in macOS Keychain and are removed from `settings.json`.
 Environment variables still override stored secrets.
 
+### Intelligence Provider Notes
+
+- **Ollama endpoint is configurable** in Settings -> Intelligence as a base URL (example: `http://100.74.176.49:11434`).
+- You can click **Test Connection** to verify reachability and refresh model discovery from that endpoint.
+- Ollama-specific endpoint controls are shown **only when provider is set to `ollama`**.
+- For `opencode`, the model list is intentionally restricted to **`big-pickle`**.
+
 ## Project Structure
 
 ```

@@ -647,6 +647,42 @@ class SettingsDialog(QDialog):
         llm_secret_note.setStyleSheet("color: #888; font-size: 10px;")
         layout.addWidget(llm_secret_note)
 
+        self.ollama_endpoint_header = self._make_header("Ollama Endpoint")
+        layout.addWidget(self.ollama_endpoint_header)
+        self.ollama_url_combo = QComboBox()
+        self.ollama_url_combo.setEditable(True)
+        self._style_combo(self.ollama_url_combo)
+        self.ollama_url_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        for url in cfg.ollama_url_history:
+            self.ollama_url_combo.addItem(url)
+        current_url = cfg.ollama_api_url
+        if self.ollama_url_combo.findText(current_url) < 0:
+            self.ollama_url_combo.insertItem(0, current_url)
+        self.ollama_url_combo.setCurrentText(current_url)
+        layout.addWidget(self.ollama_url_combo)
+
+        self.ollama_hint_lbl = QLabel("Use host:port only (e.g. http://100.74.176.49:11434). App adds /api/* automatically.")
+        self.ollama_hint_lbl.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(self.ollama_hint_lbl)
+
+        self.test_ollama_btn = QPushButton("Test Connection")
+        self.test_ollama_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.test_ollama_btn.clicked.connect(self._on_test_ollama_connection)
+        self.test_ollama_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {COLOR_ELECTRIC_BLUE};
+                font-weight: bold;
+                border: 1px solid {COLOR_ELECTRIC_BLUE};
+                border-radius: 6px;
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{
+                background: rgba(86, 226, 255, 0.1);
+            }}
+        """)
+        layout.addWidget(self.test_ollama_btn)
+
         # Model Section
         layout.addSpacing(5)
         layout.addWidget(self._make_header("Active Model"))
@@ -1055,6 +1091,25 @@ class SettingsDialog(QDialog):
             }}
         """)
 
+    def _current_ollama_base_url(self) -> str:
+        raw = self.ollama_url_combo.currentText() if hasattr(self, "ollama_url_combo") else cfg.ollama_api_url
+        return cfg._normalize_ollama_base_url(raw)
+
+    def _on_test_ollama_connection(self):
+        if not self.llm_worker:
+            self.model_status.setText("LLM worker unavailable")
+            return
+
+        base = self._current_ollama_base_url()
+        result = self.llm_worker.test_ollama_connection(base)
+        if result.get("ok"):
+            # Apply tested endpoint immediately for this session so model list reflects it.
+            cfg.ollama_api_url = base
+            self.model_status.setText(f"Connected: {result.get('model_count', 0)} model(s) @ {base}")
+            self.refresh_installed_models()
+        else:
+            self.model_status.setText(f"Connection failed @ {base}: {result.get('error', 'unknown error')}")
+
     def update_ui_state(self, provider):
         # same logic but cleaner checks
         is_ollama = (provider == "ollama")
@@ -1066,7 +1121,17 @@ class SettingsDialog(QDialog):
         self.model_status.setVisible(is_ollama)
         self.api_key_edit.setVisible(is_openai_gemini)
         self.model_tabs.setVisible(is_ollama)
+        if hasattr(self, "ollama_endpoint_header"):
+            self.ollama_endpoint_header.setVisible(is_ollama)
+        if hasattr(self, "ollama_url_combo"):
+            self.ollama_url_combo.setVisible(is_ollama)
+        if hasattr(self, "ollama_hint_lbl"):
+            self.ollama_hint_lbl.setVisible(is_ollama)
+        if hasattr(self, "test_ollama_btn"):
+            self.test_ollama_btn.setVisible(is_ollama)
         self.progress_bar.setVisible(False) # Hide progress bar when switching providers
+        if not is_ollama:
+            self.model_status.setText("")
         # We can't easily hide the layout headers without keeping refs, 
         # but for now let's just handle the inputs.
         
@@ -1074,7 +1139,7 @@ class SettingsDialog(QDialog):
              # Align with opencode model ids from /zen docs
              # Use addItem with (display_name, data=actual_id)
              self.model_edit.clear()
-             opencode_models = [("grok-code", "grok-code"), ("big-pickle", "big-pickle"), ("minimax", "minimax-m2.1-free"), ("glm-4.7", "glm-4.7-free")]
+             opencode_models = [("big-pickle", "big-pickle")]
              for display, model_id in opencode_models:
                  self.model_edit.addItem(display, model_id)
              # Find and set saved model
@@ -1101,6 +1166,11 @@ class SettingsDialog(QDialog):
         cfg.assistant_name = self.name_edit.text()
         cfg.api_provider = self.provider_combo.currentText()
         cfg.api_key = self.api_key_edit.text()
+        if hasattr(self, "ollama_url_combo"):
+            current_base = cfg._normalize_ollama_base_url(self.ollama_url_combo.currentText())
+            cfg.ollama_api_url = current_base
+            history = [current_base] + [u for u in cfg.ollama_url_history if u != current_base]
+            cfg.ollama_url_history = history[:5]
         # Use data if available (for opencode friendly names), else fall back to text
         model_data = self.model_edit.currentData()
         cfg.ollama_model = model_data if model_data else self.model_edit.currentText()
@@ -1270,6 +1340,8 @@ class SettingsDialog(QDialog):
             
         self.render_installed_models()
         self.render_catalog_models()
+        if hasattr(self, "model_status") and cfg.api_provider == "ollama":
+            self.model_status.setText(f"Connected endpoint: {cfg.ollama_api_url}")
 
     def render_installed_models(self):
         if not hasattr(self, 'installed_container'): return

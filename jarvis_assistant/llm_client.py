@@ -5,11 +5,13 @@ import subprocess
 import time
 from pathlib import Path
 from typing import List, Dict, Any
+from urllib.parse import urlparse
 from requests.exceptions import ConnectionError, HTTPError, Timeout, RequestException
 from PyQt6.QtCore import QObject, pyqtSignal, QRunnable, pyqtSlot
 from .config import cfg
 
 class LLMWorker(QObject):
+    REMOTE_UNREACHABLE_PREFIX = "__OLLAMA_REMOTE_UNREACHABLE__"
     """
     Worker for calling Ollama API.
     """
@@ -21,6 +23,31 @@ class LLMWorker(QObject):
         super().__init__()
         self.tried_start_ollama = False
         self._cancel_event = threading.Event()
+
+    def _ollama_base_url(self):
+        return cfg.ollama_api_url
+
+    def _ollama_url(self, path: str) -> str:
+        return f"{self._ollama_base_url()}/api/{path.lstrip('/')}"
+
+    def _is_local_ollama_host(self) -> bool:
+        try:
+            host = (urlparse(self._ollama_base_url()).hostname or "").lower()
+        except Exception:
+            host = ""
+        return host in {"127.0.0.1", "localhost", "::1"}
+
+    def test_ollama_connection(self, base_url: str | None = None) -> dict:
+        target = (base_url or self._ollama_base_url() or "").strip().rstrip('/')
+        if not target:
+            return {"ok": False, "error": "Empty Ollama base URL"}
+        try:
+            resp = requests.get(f"{target}/api/tags", timeout=5)
+            resp.raise_for_status()
+            models = resp.json().get("models", [])
+            return {"ok": True, "model_count": len(models), "base_url": target}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "base_url": target}
 
     def cancel_download(self):
         """Request cancellation of current download."""
@@ -44,7 +71,7 @@ class LLMWorker(QObject):
         """
         self._ensure_ollama_running(force_start=True)
         try:
-            url = "http://127.0.0.1:11434/api/tags"
+            url = self._ollama_url("tags")
             resp = requests.get(url, timeout=5)
             resp.raise_for_status()
             models = []
@@ -72,7 +99,7 @@ class LLMWorker(QObject):
         """
         try:
             resp = requests.post(
-                "http://127.0.0.1:11434/api/show",
+                self._ollama_url("show"),
                 json={"name": name},
                 timeout=10,
             )
@@ -95,7 +122,7 @@ class LLMWorker(QObject):
         """
         Pull a model via Ollama API with streaming progress signals.
         """
-        url = "http://127.0.0.1:11434/api/pull"
+        url = self._ollama_url("pull")
         payload = {"name": name, "stream": True}
         
         if not self._ensure_ollama_running():
@@ -138,7 +165,7 @@ class LLMWorker(QObject):
         """
         Remove a model via Ollama API.
         """
-        url = "http://127.0.0.1:11434/api/delete"
+        url = self._ollama_url("delete")
         try:
             resp = requests.delete(url, json={"name": name}, timeout=10)
             resp.raise_for_status()
@@ -193,7 +220,7 @@ class LLMWorker(QObject):
 
     def _run_generate(self, messages: list[dict], format: str):
         provider = cfg.api_provider
-        
+
         if provider == "openai":
             self._generate_openai(messages, format)
         elif provider == "gemini":
@@ -204,26 +231,26 @@ class LLMWorker(QObject):
             self._generate_ollama(messages, format)
 
     def _generate_ollama(self, messages: list[dict], format: str):
-        url = "http://127.0.0.1:11434/api/chat"
-        
-        # We removed auto-pull here because we now have a manual button
-        # But we could keep a check if we wanted. For now, let's assume user pulls it.
+        url = self._ollama_url("chat")
 
         payload = {
             "model": cfg.ollama_model,
             "messages": messages,
             "stream": False,
         }
-        
+
         if format == "json":
             payload["format"] = "json"
 
         if not self._ensure_ollama_running():
-            self.error.emit("Ollama is not reachable. Start it with 'ollama serve' and ensure port 11434 is open.")
+            base = self._ollama_base_url()
+            if self._is_local_ollama_host():
+                self.error.emit("Ollama is not reachable. Start it with 'ollama serve' and ensure port 11434 is open.")
+            else:
+                self.error.emit(f"{self.REMOTE_UNREACHABLE_PREFIX}:{base}")
             return
 
         try:
-            # Increased timeout for CPU users / slow models
             response = requests.post(url, json=payload, timeout=300)
             response.raise_for_status()
             result = response.json()
@@ -241,7 +268,11 @@ class LLMWorker(QObject):
                     return
                 except Exception as e:
                     self.error.emit(f"Ollama Error after retry: {e}")
-            self.error.emit("Ollama is not reachable. Start it with 'ollama serve' and ensure port 11434 is open.")
+            base = self._ollama_base_url()
+            if self._is_local_ollama_host():
+                self.error.emit("Ollama is not reachable. Start it with 'ollama serve' and ensure port 11434 is open.")
+            else:
+                self.error.emit(f"{self.REMOTE_UNREACHABLE_PREFIX}:{base}")
         except HTTPError as e:
             self.error.emit(f"Ollama returned an HTTP error: {e}")
         except Timeout:
@@ -252,31 +283,34 @@ class LLMWorker(QObject):
     def _ensure_ollama_running(self, force_start: bool = False) -> bool:
         """
         Ping Ollama; optionally try to start it if not reachable.
+        Auto-start is local-host only.
         """
         try:
-            resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=2)
+            resp = requests.get(self._ollama_url("tags"), timeout=2)
             if resp.status_code == 200:
                 return True
         except Exception:
             pass
 
+        if not self._is_local_ollama_host():
+            return False
+
         if force_start and not self.tried_start_ollama:
             self.tried_start_ollama = True
             try:
-                # First try CLI
                 subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(2)
                 try:
-                    resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+                    resp = requests.get(self._ollama_url("tags"), timeout=3)
                     if resp.status_code == 200:
                         return True
                 except Exception:
                     pass
-                # Fallback: launch the macOS app if present
+
                 subprocess.Popen(["open", "-a", "Ollama"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(3)
                 try:
-                    resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+                    resp = requests.get(self._ollama_url("tags"), timeout=3)
                     return resp.status_code == 200
                 except Exception:
                     return False

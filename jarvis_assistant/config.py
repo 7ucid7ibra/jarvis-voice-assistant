@@ -1,5 +1,6 @@
 import json
 import os
+from urllib.parse import urlparse
 
 from . import app_paths
 from . import secret_store
@@ -8,7 +9,8 @@ from .utils import logger
 # Default Settings
 DEFAULT_WHISPER_MODEL = "base"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:0.5b"
-DEFAULT_OLLAMA_API_URL = "http://localhost:11434/api/chat"
+DEFAULT_OLLAMA_API_URL = "http://127.0.0.1:11434"
+DEFAULT_OLLAMA_URL_HISTORY = [DEFAULT_OLLAMA_API_URL]
 DEFAULT_TTS_RATE = 190
 DEFAULT_TTS_VOLUME = 1.0
 DEFAULT_TTS_VOICE_ID = None
@@ -61,6 +63,31 @@ class Config:
         self._settings_file = settings_file
         self._settings = self._load_settings()
         self._migrate_legacy_secrets()
+
+    def _normalize_ollama_base_url(self, value: str | None) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return DEFAULT_OLLAMA_API_URL
+
+        lower = raw.lower()
+        if lower.startswith("http://http://"):
+            raw = "http://" + raw[len("http://http://"):]
+        elif lower.startswith("https://https://"):
+            raw = "https://" + raw[len("https://https://"):]
+
+        parsed = urlparse(raw if "://" in raw else f"http://{raw}")
+        scheme = parsed.scheme or "http"
+        netloc = parsed.netloc or parsed.path
+        path = parsed.path if parsed.netloc else ""
+
+        if not netloc:
+            return DEFAULT_OLLAMA_API_URL
+
+        if path.lower().startswith("/api/"):
+            path = ""
+
+        normalized = f"{scheme}://{netloc}{path}".rstrip("/")
+        return normalized or DEFAULT_OLLAMA_API_URL
 
     def _load_settings(self):
         if os.path.exists(self._settings_file):
@@ -146,7 +173,48 @@ class Config:
 
     @property
     def ollama_api_url(self):
-        return self._settings.get("ollama_api_url", DEFAULT_OLLAMA_API_URL)
+        return self._normalize_ollama_base_url(
+            self._settings.get("ollama_api_url", DEFAULT_OLLAMA_API_URL)
+        )
+
+    @ollama_api_url.setter
+    def ollama_api_url(self, value: str) -> None:
+        self._settings["ollama_api_url"] = self._normalize_ollama_base_url(value)
+
+    @property
+    def ollama_url_history(self) -> list[str]:
+        history = self._settings.get("ollama_url_history", DEFAULT_OLLAMA_URL_HISTORY)
+        if not isinstance(history, list):
+            history = []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in history:
+            if not isinstance(item, str):
+                continue
+            norm = self._normalize_ollama_base_url(item)
+            if norm and norm not in seen:
+                cleaned.append(norm)
+                seen.add(norm)
+        if DEFAULT_OLLAMA_API_URL not in seen:
+            cleaned.insert(0, DEFAULT_OLLAMA_API_URL)
+        return cleaned[:5]
+
+    @ollama_url_history.setter
+    def ollama_url_history(self, value: list[str]) -> None:
+        if not isinstance(value, list):
+            value = []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            norm = self._normalize_ollama_base_url(item)
+            if norm and norm not in seen:
+                cleaned.append(norm)
+                seen.add(norm)
+        if DEFAULT_OLLAMA_API_URL not in seen:
+            cleaned.insert(0, DEFAULT_OLLAMA_API_URL)
+        self._settings["ollama_url_history"] = cleaned[:5]
 
     @property
     def tts_rate(self):
