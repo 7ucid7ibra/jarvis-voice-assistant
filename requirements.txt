@@ -8,3 +8,5 @@ piper-tts
 psutil
 keyring
 pathvalidate
+
+openwakeword

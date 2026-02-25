@@ -14,6 +14,9 @@ DEFAULT_TTS_VOLUME = 1.0
 DEFAULT_TTS_VOICE_ID = None
 DEFAULT_WAKE_WORD_ENABLED = False
 DEFAULT_WAKE_WORD = "jarvis"
+DEFAULT_WAKE_RECORD_SILENCE_SEC = 1.2
+DEFAULT_WAKE_RECORD_MAX_SEC = 8.0
+DEFAULT_WAKE_VAD_ENERGY_THRESHOLD = 0.01
 DEFAULT_HA_URL = os.environ.get("HA_URL", "")
 DEFAULT_HA_TOKEN = ""
 DEFAULT_ASSISTANT_NAME = "JARVIS"
@@ -38,7 +41,12 @@ COLOR_TEXT_SECONDARY = "#888888"
 
 # Resolve settings file from writable app data path by default.
 SETTINGS_FILE = os.environ.get("JARVIS_SETTINGS_FILE", app_paths.settings_file())
-SECRET_KEYS = {"ha_token", "api_key", "telegram_bot_token", "telegram_chat_id"}
+SECRET_KEYS = {
+    "ha_token",
+    "api_key",
+    "telegram_bot_token",
+    "telegram_chat_id",
+}
 SECRET_ENV_MAP = {
     "ha_token": "HA_TOKEN",
     "api_key": "API_KEY",
@@ -180,6 +188,38 @@ class Config:
     def wake_word(self, value):
         self._settings["wake_word"] = value.lower().strip()
 
+    @property
+    def wake_record_silence_sec(self) -> float:
+        try:
+            return float(self._settings.get("wake_record_silence_sec", DEFAULT_WAKE_RECORD_SILENCE_SEC))
+        except Exception:
+            return DEFAULT_WAKE_RECORD_SILENCE_SEC
+
+    @wake_record_silence_sec.setter
+    def wake_record_silence_sec(self, value: float) -> None:
+        self._settings["wake_record_silence_sec"] = float(value)
+
+    @property
+    def wake_record_max_sec(self) -> float:
+        try:
+            return float(self._settings.get("wake_record_max_sec", DEFAULT_WAKE_RECORD_MAX_SEC))
+        except Exception:
+            return DEFAULT_WAKE_RECORD_MAX_SEC
+
+    @wake_record_max_sec.setter
+    def wake_record_max_sec(self, value: float) -> None:
+        self._settings["wake_record_max_sec"] = float(value)
+
+    @property
+    def wake_vad_energy_threshold(self) -> float:
+        try:
+            return float(self._settings.get("wake_vad_energy_threshold", DEFAULT_WAKE_VAD_ENERGY_THRESHOLD))
+        except Exception:
+            return DEFAULT_WAKE_VAD_ENERGY_THRESHOLD
+
+    @wake_vad_energy_threshold.setter
+    def wake_vad_energy_threshold(self, value: float) -> None:
+        self._settings["wake_vad_energy_threshold"] = float(value)
     @property
     def ha_url(self) -> str:
         return self._settings.get("ha_url", os.environ.get("HA_URL", DEFAULT_HA_URL))

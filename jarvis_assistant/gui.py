@@ -474,8 +474,6 @@ class SettingsDialog(QDialog):
 
         self.tabs = QTabWidget()
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        # Prevent tabs from being squeezed
-        self.tabs.setMinimumHeight(450) 
         self.tabs.setStyleSheet(f"""
             QTabWidget::pane {{ border: 1px solid #CCC; border-radius: 8px; background: #E8EBEF; }}
             QTabBar::tab {{ 
@@ -565,6 +563,17 @@ class SettingsDialog(QDialog):
     def mouseReleaseEvent(self, event):
         self.old_pos = None
 
+    def _wrap_tab_page(self, page: QWidget) -> QScrollArea:
+        """Wrap tab page content so only the active tab body scrolls."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.setWidget(page)
+        return scroll
+
     def _init_general_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -612,7 +621,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(prof_hint)
         
         layout.addStretch()
-        self.tabs.addTab(page, "General")
+        self.tabs.addTab(self._wrap_tab_page(page), "General")
 
     def _init_llm_page(self):
         page = QWidget()
@@ -713,7 +722,7 @@ class SettingsDialog(QDialog):
         
         layout.addWidget(self.model_tabs)
         layout.addStretch()
-        self.tabs.addTab(page, "Intelligence")
+        self.tabs.addTab(self._wrap_tab_page(page), "Intelligence")
 
     def _make_scroll_section(self):
         scroll = QScrollArea()
@@ -794,18 +803,17 @@ class SettingsDialog(QDialog):
         layout.addSpacing(10)
         self.wake_word_checkbox = QCheckBox("Enable Wake Word")
         self.wake_word_checkbox.setChecked(cfg.wake_word_enabled)
-        self.wake_word_checkbox.setEnabled(False)
-        self.wake_word_checkbox.setToolTip("Wake word detection is still in development.")
+        self.wake_word_checkbox.setToolTip("Use openWakeWord detection in idle mode. Say: Hey Jarvis.")
         self.wake_word_checkbox.setStyleSheet(f"""
             QCheckBox {{ color: #333; font-weight: bold; }}
             QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
             QCheckBox::indicator:checked {{ background: {COLOR_ELECTRIC_BLUE}; border-color: {COLOR_ELECTRIC_BLUE}; }}
         """)
         layout.addWidget(self.wake_word_checkbox)
-        
+
         self.wake_word_edit = QLineEdit(cfg.wake_word)
-        self.wake_word_edit.setPlaceholderText("Wake word...")
-        self.wake_word_edit.setEnabled(False)
+        self.wake_word_edit.setPlaceholderText("Wake phrase (e.g. Hey Jarvis)...")
+        self.wake_word_edit.setEnabled(self.wake_word_checkbox.isChecked())
         self.wake_word_edit.setStyleSheet(f"""
             QLineEdit {{
                 background: {COLOR_SCREEN_BG};
@@ -817,10 +825,32 @@ class SettingsDialog(QDialog):
             QLineEdit:disabled {{ background: #DDD; color: #888; border: 1px solid #CCC; }}
         """)
         self.wake_word_checkbox.toggled.connect(self.wake_word_edit.setEnabled)
-        layout.addWidget(self.wake_word_edit)
-        
+        layout.addWidget(self.wake_word_edit)        
+        wake_note = QLabel("Built-in openWakeWord model expects phrase-level trigger.")
+        wake_note.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(wake_note)
+        layout.addWidget(QLabel("Wake command silence timeout (seconds)"))
+        self.wake_silence_edit = QLineEdit(f"{cfg.wake_record_silence_sec:.2f}")
+        self._style_input(self.wake_silence_edit)
+        self.wake_word_checkbox.toggled.connect(self.wake_silence_edit.setEnabled)
+        self.wake_silence_edit.setEnabled(self.wake_word_checkbox.isChecked())
+        layout.addWidget(self.wake_silence_edit)
+
+        layout.addWidget(QLabel("Wake command max duration (seconds)"))
+        self.wake_max_edit = QLineEdit(f"{cfg.wake_record_max_sec:.2f}")
+        self._style_input(self.wake_max_edit)
+        self.wake_word_checkbox.toggled.connect(self.wake_max_edit.setEnabled)
+        self.wake_max_edit.setEnabled(self.wake_word_checkbox.isChecked())
+        layout.addWidget(self.wake_max_edit)
+
+        layout.addWidget(QLabel("Wake voice threshold (RMS, advanced)"))
+        self.wake_vad_edit = QLineEdit(f"{cfg.wake_vad_energy_threshold:.4f}")
+        self._style_input(self.wake_vad_edit)
+        self.wake_word_checkbox.toggled.connect(self.wake_vad_edit.setEnabled)
+        self.wake_vad_edit.setEnabled(self.wake_word_checkbox.isChecked())
+        layout.addWidget(self.wake_vad_edit)
         layout.addStretch()
-        self.tabs.addTab(page, "Speech")
+        self.tabs.addTab(self._wrap_tab_page(page), "Speech")
         self.voice_combo.currentIndexChanged.connect(self._update_piper_quality_visibility)
         self._update_piper_quality_visibility()
 
@@ -876,7 +906,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.web_search_checkbox)
 
         layout.addStretch()
-        self.tabs.addTab(page, "Smart Home")
+        self.tabs.addTab(self._wrap_tab_page(page), "Smart Home")
 
     def _make_header(self, text):
         lbl = QLabel(text)
@@ -1084,6 +1114,26 @@ class SettingsDialog(QDialog):
         cfg.tts_voice_id = self.voice_combo.currentData()
         cfg.wake_word_enabled = self.wake_word_checkbox.isChecked()
         cfg.wake_word = self.wake_word_edit.text()
+
+        def _parse_float(value: str, fallback: float) -> float:
+            try:
+                return float((value or "").strip())
+            except Exception:
+                return fallback
+
+        wake_silence = _parse_float(self.wake_silence_edit.text() if hasattr(self, "wake_silence_edit") else "", cfg.wake_record_silence_sec)
+        wake_max = _parse_float(self.wake_max_edit.text() if hasattr(self, "wake_max_edit") else "", cfg.wake_record_max_sec)
+        wake_vad = _parse_float(self.wake_vad_edit.text() if hasattr(self, "wake_vad_edit") else "", cfg.wake_vad_energy_threshold)
+
+        wake_silence = max(0.3, min(3.0, wake_silence))
+        wake_max = max(3.0, min(30.0, wake_max))
+        wake_vad = max(0.001, min(0.1, wake_vad))
+        if wake_max <= wake_silence:
+            wake_max = min(30.0, wake_silence + 0.5)
+
+        cfg.wake_record_silence_sec = wake_silence
+        cfg.wake_record_max_sec = wake_max
+        cfg.wake_vad_energy_threshold = wake_vad
         cfg.ha_url = self.ha_url_edit.text()
         cfg.ha_token = self.ha_token_edit.text()
         if hasattr(self, "telegram_token_edit"):
@@ -1101,7 +1151,6 @@ class SettingsDialog(QDialog):
         ]
         if any(entered_secrets) and not cfg.keychain_available:
             self._show_keychain_warning()
-        
         cfg.save()
         logger.info(f"Settings saved to: {cfg.tts_voice_id}")
         
