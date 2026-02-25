@@ -17,12 +17,18 @@ class LLMWorker(QObject):
     """
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
-    progress = pyqtSignal(str, int) # status, percentage
+    progress = pyqtSignal(str, str, int) # model, status, percentage
 
     def __init__(self):
         super().__init__()
         self.tried_start_ollama = False
         self._cancel_event = threading.Event()
+        self.download_active = False
+        self.download_model = ""
+        self.download_status = ""
+        self.download_pct = -1
+        self._download_cancel_events: dict[str, threading.Event] = {}
+        self._download_states: dict[str, dict] = {}
 
     def _ollama_base_url(self):
         return cfg.ollama_api_url
@@ -49,9 +55,38 @@ class LLMWorker(QObject):
         except Exception as e:
             return {"ok": False, "error": str(e), "base_url": target}
 
-    def cancel_download(self):
-        """Request cancellation of current download."""
-        self._cancel_event.set()
+    def cancel_download(self, name: str | None = None):
+        """Request cancellation of current download(s)."""
+        if name:
+            ev = self._download_cancel_events.get(name)
+            if ev:
+                ev.set()
+            state = self._download_states.get(name)
+            if state:
+                state["status"] = "Cancelling download..."
+        else:
+            self._cancel_event.set()
+            for ev in self._download_cancel_events.values():
+                ev.set()
+            for state in self._download_states.values():
+                state["status"] = "Cancelling download..."
+
+    def get_download_state(self) -> dict:
+        # Backward-compatible single-download snapshot (most recent active, else last known)
+        states = self.get_download_states()
+        if states:
+            active = [v for v in states.values() if v.get("active")]
+            pick = (active[0] if active else list(states.values())[0]).copy()
+            return pick
+        return {
+            "active": self.download_active,
+            "model": self.download_model,
+            "status": self.download_status,
+            "pct": self.download_pct,
+        }
+
+    def get_download_states(self) -> dict[str, dict]:
+        return {k: v.copy() for k, v in self._download_states.items()}
 
     def generate(self, messages: list[dict], format: str = "json"):
         """
@@ -124,13 +159,35 @@ class LLMWorker(QObject):
         """
         url = self._ollama_url("pull")
         payload = {"name": name, "stream": True}
-        
+        cancel_event = threading.Event()
+        self._download_cancel_events[name] = cancel_event
+        self._download_states[name] = {
+            "active": True,
+            "model": name,
+            "status": f"Starting download: {name}...",
+            "pct": 0,
+        }
+        self.download_active = True
+        self.download_model = name
+        self.download_status = self._download_states[name]["status"]
+        self.download_pct = 0
+
         if not self._ensure_ollama_running():
+            self._download_states[name] = {
+                "active": False,
+                "model": name,
+                "status": "Error: Ollama not running",
+                "pct": -1,
+            }
+            self.download_active = any(v.get("active") for v in self._download_states.values())
+            self.download_model = name
+            self.download_status = self._download_states[name]["status"]
+            self.download_pct = -1
+            self.progress.emit(name, self.download_status, -1)
             return {"status": "error", "error": "Ollama not running"}
-            
+
         try:
-            self._cancel_event.clear()
-            response = requests.post(url, json=payload, stream=True, timeout=300) # Increased timeout for large models
+            response = requests.post(url, json=payload, stream=True, timeout=300)
             response.raise_for_status()
 
             for line in response.iter_lines():
@@ -146,20 +203,62 @@ class LLMWorker(QObject):
                             pct = int((completed / total) * 100)
                             status = f"{status} ({pct}%)"
 
-                        self.progress.emit(status, pct)
+                        self._download_states[name] = {
+                            "active": True,
+                            "model": name,
+                            "status": status,
+                            "pct": pct,
+                        }
+                        self.download_active = True
+                        self.download_model = name
+                        self.download_status = status
+                        self.download_pct = pct
+                        self.progress.emit(name, status, pct)
                     except json.JSONDecodeError:
                         continue
 
-                # Check cancellation flag
-                if self._cancel_event.is_set():
-                    self.progress.emit("Download Cancelled.", -1)
+                if self._cancel_event.is_set() or cancel_event.is_set():
+                    self._download_states[name] = {
+                        "active": False,
+                        "model": name,
+                        "status": "Download Cancelled.",
+                        "pct": -1,
+                    }
+                    self.download_active = any(v.get("active") for v in self._download_states.values())
+                    self.download_model = name
+                    self.download_status = "Download Cancelled."
+                    self.download_pct = -1
+                    self.progress.emit(name, "Download Cancelled.", -1)
                     return {"status": "cancelled"}
-            
-            self.progress.emit("Download Finished.", -1)
+
+            self._download_states[name] = {
+                "active": False,
+                "model": name,
+                "status": "Download Finished.",
+                "pct": -1,
+            }
+            self.download_active = any(v.get("active") for v in self._download_states.values())
+            self.download_model = name
+            self.download_status = "Download Finished."
+            self.download_pct = -1
+            self.progress.emit(name, "Download Finished.", -1)
             return {"status": "success"}
         except Exception as e:
-            self.progress.emit(f"Error: {e}", -1)
+            msg = f"Error: {e}"
+            self._download_states[name] = {
+                "active": False,
+                "model": name,
+                "status": msg,
+                "pct": -1,
+            }
+            self.download_active = any(v.get("active") for v in self._download_states.values())
+            self.download_model = name
+            self.download_status = msg
+            self.download_pct = -1
+            self.progress.emit(name, msg, -1)
             return {"status": "error", "error": str(e)}
+        finally:
+            self._download_cancel_events.pop(name, None)
 
     def remove_model(self, name: str) -> Dict[str, str]:
         """

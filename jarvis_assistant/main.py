@@ -32,6 +32,13 @@ from urllib.parse import urlparse, parse_qs, unquote
 from html import unescape
 
 from .agents import IntentAgent, ActionAgent, ResponseAgent
+from .quick_commands import (
+    FastIntentRouter,
+    QuickCommand,
+    QuickCommandStore,
+    is_safe_auto_action,
+    new_quick_command_id,
+)
 
 
 class JarvisController(QObject):
@@ -153,6 +160,24 @@ class JarvisController(QObject):
             self.audio_recorder.stop_wake_word_listening()
             self._wake_word_active = False
 
+    def apply_runtime_settings(self) -> None:
+        """Apply updated config values to the live controller without restart."""
+        self.fast_intent_router = FastIntentRouter(
+            self.quick_commands,
+            fuzzy_enabled=cfg.quick_commands_fuzzy_enabled,
+        )
+
+        state = self.window.mic_btn.state
+        if not cfg.wake_word_enabled:
+            self._stop_wake_word_listening()
+            if state == MicButton.STATE_IDLE:
+                self.window.set_status("Idle")
+            return
+
+        if state in (MicButton.STATE_IDLE, MicButton.STATE_SPEAKING):
+            self._stop_wake_word_listening()
+            self._start_wake_word_if_enabled()
+
     def init_profile_data(self):
         profile = cfg.current_profile
         logger.info(f"Initializing profile: {profile}")
@@ -163,6 +188,13 @@ class JarvisController(QObject):
         self.memory_manager = MemoryManager(memory_file=mem_file)
         self.conversation = Conversation(history_file=hist_file)
         self.conversation.load()
+
+        self.quick_command_store = QuickCommandStore(profile)
+        self.quick_commands = self.quick_command_store.load_commands()
+        self.fast_intent_router = FastIntentRouter(
+            self.quick_commands,
+            fuzzy_enabled=cfg.quick_commands_fuzzy_enabled,
+        )
         
     def switch_profile(self, new_profile):
         if new_profile == cfg.current_profile:
@@ -224,6 +256,311 @@ class JarvisController(QObject):
                 }
             )
         return entities
+
+    def _save_quick_commands(self) -> None:
+        self.quick_command_store.save_commands(self.quick_commands)
+        self.fast_intent_router = FastIntentRouter(
+            self.quick_commands,
+            fuzzy_enabled=cfg.quick_commands_fuzzy_enabled,
+        )
+
+    def list_quick_commands(self) -> list[dict]:
+        return [c.to_dict() for c in self.quick_commands]
+
+    def upsert_quick_command(
+        self,
+        *,
+        cmd_id: str | None,
+        phrases: list[str],
+        action: dict,
+        safety: str,
+        enabled: bool,
+        meta: dict | None = None,
+    ) -> dict:
+        clean_phrases = [p.strip() for p in phrases if p and p.strip()]
+        if not clean_phrases:
+            raise ValueError("At least one phrase is required.")
+        if not isinstance(action, dict) or not action.get("domain") or not action.get("service") or not action.get("entity_id"):
+            raise ValueError("Action must include domain, service, and entity_id.")
+
+        if not cmd_id:
+            cmd_id = new_quick_command_id(clean_phrases[0])
+
+        existing = next((c for c in self.quick_commands if c.id == cmd_id), None)
+        if existing is None:
+            self.quick_commands.append(
+                QuickCommand(
+                    id=cmd_id,
+                    phrases=clean_phrases,
+                    action=action,
+                    safety=safety,
+                    enabled=enabled,
+                    meta=meta or {},
+                )
+            )
+        else:
+            existing.phrases = clean_phrases
+            existing.action = action
+            existing.safety = safety
+            existing.enabled = enabled
+            existing.meta = meta or existing.meta
+
+        self._save_quick_commands()
+        return {"status": "success", "id": cmd_id}
+
+    def delete_quick_command(self, cmd_id: str) -> dict:
+        before = len(self.quick_commands)
+        self.quick_commands = [c for c in self.quick_commands if c.id != cmd_id]
+        if len(self.quick_commands) == before:
+            return {"status": "not_found"}
+        self._save_quick_commands()
+        return {"status": "success"}
+
+    def list_selectable_quick_entities(self, include_all: bool = False) -> list[dict]:
+        safe_domains = {"light", "switch", "input_boolean"}
+        entities = []
+        seen = set()
+        for ent in self._parse_entities():
+            entity_id = ent.get("entity_id", "")
+            domain = ent.get("domain", "")
+            if not entity_id or entity_id in seen:
+                continue
+            if not include_all and domain not in safe_domains:
+                continue
+            seen.add(entity_id)
+            entities.append(ent)
+        entities.sort(key=lambda e: (e.get("name", "").lower(), e.get("entity_id", "")))
+        return entities
+
+    def refresh_quick_command_entities(self, include_all: bool = False) -> dict:
+        try:
+            refreshed = self.ha_client.get_relevant_entities()
+            if refreshed:
+                self.ha_entities = refreshed
+            selectable = self.list_selectable_quick_entities(include_all=include_all)
+            logger.info(
+                "quick_entities_refresh success include_all=%s count=%s",
+                include_all,
+                len(selectable),
+            )
+            return {"status": "success", "entities": selectable, "count": len(selectable)}
+        except Exception as exc:
+            selectable = self.list_selectable_quick_entities(include_all=include_all)
+            logger.warning("quick_entities_refresh failed include_all=%s error=%s", include_all, exc)
+            return {
+                "status": "error",
+                "error": str(exc),
+                "entities": selectable,
+                "count": len(selectable),
+            }
+
+    def suggest_quick_phrases(self, entity: dict) -> list[str]:
+        name = str(entity.get("name") or "").strip().lower()
+        return [name] if name else []
+
+    def create_quick_commands_for_entity(
+        self,
+        entity_id: str,
+        phrases: list[str],
+        enabled: bool = True,
+    ) -> dict:
+        all_entities = self.list_selectable_quick_entities(include_all=True)
+        entity = next((e for e in all_entities if e.get("entity_id") == entity_id), None)
+        if entity is None:
+            return {"status": "error", "error": "Entity no longer available."}
+
+        clean_phrases = []
+        seen = set()
+        for phrase in phrases:
+            text = (phrase or "").strip()
+            if not text or text in seen:
+                continue
+            clean_phrases.append(text)
+            seen.add(text)
+        if not clean_phrases:
+            return {"status": "error", "error": "At least one phrase is required."}
+
+        domain = entity.get("domain") or ""
+        action_keys = ["turn_on", "turn_off"]
+
+        by_action = {
+            (
+                cmd.action.get("domain"),
+                cmd.action.get("service"),
+                cmd.action.get("entity_id"),
+            ): cmd
+            for cmd in self.quick_commands
+        }
+
+        created = 0
+        updated = 0
+        for service in action_keys:
+            key = (domain, service, entity_id)
+            action = {"domain": domain, "service": service, "entity_id": entity_id}
+            safety = "safe_auto" if is_safe_auto_action(action) else "requires_confirm"
+
+            existing = by_action.get(key)
+            if existing is None:
+                self.quick_commands.append(
+                    QuickCommand(
+                        id=new_quick_command_id(f"{entity_id}_{service}"),
+                        phrases=list(clean_phrases),
+                        action=action,
+                        safety=safety,
+                        enabled=enabled,
+                        meta={"source": "device_picker"},
+                    )
+                )
+                created += 1
+            else:
+                existing.phrases = list(clean_phrases)
+                existing.safety = safety
+                existing.enabled = enabled
+                existing.meta = {**(existing.meta or {}), "source": "device_picker"}
+                updated += 1
+
+        self._save_quick_commands()
+        logger.info(
+            "quick_commands_create_for_entity entity_id=%s created=%s updated=%s phrase_count=%s",
+            entity_id,
+            created,
+            updated,
+            len(clean_phrases),
+        )
+        return {
+            "status": "success",
+            "created": created,
+            "updated": updated,
+            "phrase_count": len(clean_phrases),
+        }
+
+    def _run_fast_intent(self, user_text: str) -> bool:
+        if not cfg.quick_commands_enabled:
+            logger.info("Fast intent disabled; falling back to LLM")
+            return False
+
+        # Apply fuzzy setting live without requiring restart.
+        self.fast_intent_router = FastIntentRouter(
+            self.quick_commands,
+            fuzzy_enabled=cfg.quick_commands_fuzzy_enabled,
+        )
+        result = self.fast_intent_router.match_fast_intent(
+            user_text,
+            locale=cfg.language,
+            now_ctx=datetime.now(),
+        )
+        if result is None:
+            logger.info("fast_path=miss -> llm_fallback")
+            return False
+
+        if result.kind == "builtin_time":
+            logger.info("fast_path=builtin_time")
+            self._reply_direct(result.response_text or "")
+            return True
+
+        if result.kind == "quick_command_create":
+            target = str(result.meta.get("target") or "").strip()
+            if not target:
+                return False
+            candidates = [e for e in self._parse_entities() if target in e["name"].lower() or target in e["entity_id"].lower()]
+            if not candidates:
+                if cfg.language == "de":
+                    self._reply_direct("Ich habe kein passendes Geraet fuer diesen Schnellbefehl gefunden.")
+                else:
+                    self._reply_direct("I could not find a matching device for that quick command.")
+                return True
+            ent = candidates[0]
+            phrase = target
+            action = {"domain": ent["domain"], "service": "toggle", "entity_id": ent["entity_id"]}
+            self.upsert_quick_command(
+                cmd_id=None,
+                phrases=[phrase, f"toggle {phrase}", f"schalte {phrase}"],
+                action=action,
+                safety="safe_auto" if is_safe_auto_action(action) else "requires_confirm",
+                enabled=True,
+                meta={"source": "voice_create"},
+            )
+            if cfg.language == "de":
+                self._reply_direct(f"Schnellbefehl fuer {ent['name']} wurde erstellt.")
+            else:
+                self._reply_direct(f"Created quick command for {ent['name']}.")
+            return True
+
+        if result.kind == "quick_command_remove":
+            target = str(result.meta.get("target") or "").strip().lower()
+            if not target:
+                return False
+            match = None
+            for cmd in self.quick_commands:
+                if any(target == p.lower().strip() for p in cmd.phrases):
+                    match = cmd
+                    break
+            if match is None:
+                if cfg.language == "de":
+                    self._reply_direct("Kein passender Schnellbefehl gefunden.")
+                else:
+                    self._reply_direct("No matching quick command found.")
+                return True
+            self.delete_quick_command(match.id)
+            if cfg.language == "de":
+                self._reply_direct("Schnellbefehl entfernt.")
+            else:
+                self._reply_direct("Quick command removed.")
+            return True
+
+        if result.kind == "quick_action" and result.action:
+            cmd = result.quick_command
+            if result.requires_confirm:
+                self.pending_action = {
+                    "action": "quick_execute",
+                    "quick_command_id": cmd.id if cmd else None,
+                    "quick_command_phrase": (cmd.phrases[0] if cmd and cmd.phrases else "quick command"),
+                    "ha_action": result.action,
+                }
+                if cfg.language == "de":
+                    self._reply_direct("Soll ich den Schnellbefehl jetzt ausfuehren?")
+                else:
+                    self._reply_direct("Should I execute this quick command now?")
+                logger.info("fast_path=quick_confirm")
+                return True
+
+            execution = self._execute_action(result.action)
+            if execution.get("error"):
+                if cfg.language == "de":
+                    self._reply_direct("Schnellbefehl fehlgeschlagen.")
+                else:
+                    self._reply_direct("Quick command failed.")
+            else:
+                if cfg.language == "de":
+                    self._reply_direct("Erledigt.")
+                else:
+                    self._reply_direct("Done.")
+            logger.info("fast_path=quick_auto")
+            return True
+
+        return False
+
+    def _process_user_input(self, text: str) -> None:
+        if self.pending_action:
+            lowered = text.strip().lower()
+            if any(k in lowered for k in ["yes", "sure", "do it", "confirm", "okay", "ok", "please do", "go ahead", "proceed"]):
+                self.execute_pending_action()
+                return
+            if any(k in lowered for k in ["no", "cancel", "stop", "don't"]):
+                self.pending_action = None
+                self.current_action_taken = {"action": "cancelled"}
+                self.start_response_agent()
+                return
+
+        self.conversation.add_message("user", text)
+        self.window.add_message(text, is_user=True)
+        QTimer.singleShot(0, lambda: self.window.scroll_area.verticalScrollBar().setValue(self.window.scroll_area.verticalScrollBar().maximum()))
+        self.window.set_status("Thinking...")
+
+        if self._run_fast_intent(text):
+            return
+
+        self.start_processing(text)
 
     def _build_input_number_action(self) -> dict | None:
         text = (self.current_user_text or "").lower()
@@ -602,8 +939,17 @@ class JarvisController(QObject):
         if not self.pending_action:
             return
         action = self.pending_action.get("action")
+        direct_handled = False
         try:
-            if action == "create_helper":
+            if action == "quick_execute":
+                ha_action = self.pending_action.get("ha_action") or {}
+                result = self._execute_action(ha_action)
+                if result.get("error"):
+                    self._reply_direct("Schnellbefehl fehlgeschlagen." if cfg.language == "de" else "Quick command failed.")
+                else:
+                    self._reply_direct("Erledigt." if cfg.language == "de" else "Done.")
+                direct_handled = True
+            elif action == "create_helper":
                 helper_type = self.pending_action.get("helper_type", "input_boolean")
                 helper_name = self.pending_action.get("helper_name", "New Helper")
                 helper_value = self.pending_action.get("helper_value")
@@ -636,7 +982,8 @@ class JarvisController(QObject):
             self.current_action_taken = {"error": str(e)}
         finally:
             self.pending_action = None
-            self.start_response_agent()
+            if not direct_handled:
+                self.start_response_agent()
 
     def describe_capabilities(self) -> str:
         """
@@ -712,43 +1059,18 @@ class JarvisController(QObject):
         text = self.window.chat_input.text().strip()
         if not text:
             return
-            
+
         self.window.chat_input.clear()
-        
-        # Similar logic to handle_stt_finished but for text
-        self.conversation.add_message("user", text)
-        self.window.add_message(text, is_user=True)
-        
-        self.window.set_status("Thinking...")
-        self.start_processing(text)
+        self._process_user_input(text)
 
     def handle_stt_finished(self, text):
         if not text:
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
             self._start_wake_word_if_enabled()
-            
             return
 
-        # Handle pending confirmations (yes/no) before normal intent flow
-        if self.pending_action:
-            lowered = text.strip().lower()
-            if any(k in lowered for k in ["yes", "sure", "do it", "confirm", "okay", "ok", "please do", "go ahead", "proceed"]):
-                self.execute_pending_action()
-                return
-            if any(k in lowered for k in ["no", "cancel", "stop", "don't"]):
-                self.pending_action = None
-                self.current_action_taken = {"action": "cancelled"}
-                self.start_response_agent()
-                return
-        
-        self.conversation.add_message("user", text)
-        self.window.add_message(text, is_user=True)
-        QTimer.singleShot(0, lambda: self.window.scroll_area.verticalScrollBar().setValue(self.window.scroll_area.verticalScrollBar().maximum()))
-        
-        self.window.set_status("Thinking...")
-        # Start Multi-Agent Process
-        self.start_processing(text)
+        self._process_user_input(text)
 
     def _play_listen_tone(self):
         """Play a subtle cue tone when wake-word enters listening mode."""

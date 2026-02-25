@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
     QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox,
-    QCheckBox, QProgressBar, QTabWidget, QMessageBox, QInputDialog
+    QCheckBox, QProgressBar, QTabWidget, QMessageBox, QInputDialog, QListWidget
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, 
@@ -14,6 +14,7 @@ from PyQt6.QtGui import (
     QLinearGradient, QFont, QPainterPath, QFontMetrics, QIcon
 )
 import threading
+import json
 import os
 import sys
 import psutil
@@ -23,6 +24,7 @@ from pathlib import Path
 from .config import cfg, COLOR_BACKGROUND, COLOR_ACCENT_CYAN, COLOR_ACCENT_TEAL
 from .profile_paths import remove_profile_files
 from .utils import logger
+from .llm_client import LLMWorker
 
 from .ui_framework import (
     GOLDEN_RATIO, BioMechCasing, COLOR_CHASSIS_DARK, COLOR_CHASSIS_MID,
@@ -33,6 +35,16 @@ ICON_DIR = Path(__file__).resolve().parent / "assets" / "icons"
 
 def _load_icon(name: str) -> QIcon:
     return QIcon(str(ICON_DIR / name))
+
+_SETTINGS_LLM_WORKER = None
+
+
+def _get_settings_llm_worker() -> LLMWorker:
+    global _SETTINGS_LLM_WORKER
+    if _SETTINGS_LLM_WORKER is None:
+        _SETTINGS_LLM_WORKER = LLMWorker()
+    return _SETTINGS_LLM_WORKER
+
 
 class MicButton(QWidget):
     clicked = pyqtSignal()
@@ -539,13 +551,13 @@ class SettingsDialog(QDialog):
         content_layout.addLayout(btn_layout)
 
         # Load models
-        from .llm_client import LLMWorker
-        self.llm_worker = LLMWorker()
-        
+        self.llm_worker = _get_settings_llm_worker()
+
         # Consolidation: update_ui_state will call refresh_installed_models
         self.llm_worker.progress.connect(self._on_model_progress)
         # Defer model loading to avoid blocking UI on dialog open
         QTimer.singleShot(100, lambda: self.update_ui_state(cfg.api_provider))
+        QTimer.singleShot(120, self._restore_model_download_ui_state)
         
         # Dragging logic for frameless window
         self.old_pos = None
@@ -701,33 +713,16 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.model_search)
         
         self.model_status = QLabel("")
-        self.model_status.setStyleSheet(f"color: {COLOR_ACCENT_TEAL}; font-size: 11px;")
+        self.model_status.setStyleSheet("color: #4a5568; font-size: 11px;")
         layout.addWidget(self.model_status)
 
-        progress_layout = QHBoxLayout()
-        
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(8)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet(f"""
-            QProgressBar {{ background: #DDD; border: none; border-radius: 4px; }}
-            QProgressBar::chunk {{ background: {COLOR_ELECTRIC_BLUE}; border-radius: 4px; }}
-        """)
-        
-        self.cancel_dl_btn = QPushButton()
-        self.cancel_dl_btn.setFixedSize(24, 24)
-        self.cancel_dl_btn.setVisible(False)
-        self.cancel_dl_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_dl_btn.setToolTip("Cancel Download")
-        self.cancel_dl_btn.setIcon(_load_icon("close.svg"))
-        self.cancel_dl_btn.setIconSize(QSize(10, 10))
-        self.cancel_dl_btn.setStyleSheet("QPushButton { color: #888; border: 1px solid #CCC; border-radius: 12px; font-weight: bold; background: white; } QPushButton:hover { color: red; border-color: red; }")
-        self.cancel_dl_btn.clicked.connect(self._cancel_download)
-
-        progress_layout.addWidget(self.progress_bar)
-        progress_layout.addWidget(self.cancel_dl_btn)
-        layout.addLayout(progress_layout)
+        self.download_rows: dict[str, dict] = {}
+        self.download_container = QWidget()
+        self.download_container.setStyleSheet("background: transparent;")
+        self.download_container_layout = QVBoxLayout(self.download_container)
+        self.download_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.download_container_layout.setSpacing(6)
+        layout.addWidget(self.download_container)
         
         # Sub-Tabs for Models
         self.model_tabs = QTabWidget()
@@ -757,6 +752,7 @@ class SettingsDialog(QDialog):
         self.model_tabs.addTab(self.cat_scroll, "BROWSE")
         
         layout.addWidget(self.model_tabs)
+
         layout.addStretch()
         self.tabs.addTab(self._wrap_tab_page(page), "Intelligence")
 
@@ -885,6 +881,89 @@ class SettingsDialog(QDialog):
         self.wake_word_checkbox.toggled.connect(self.wake_vad_edit.setEnabled)
         self.wake_vad_edit.setEnabled(self.wake_word_checkbox.isChecked())
         layout.addWidget(self.wake_vad_edit)
+
+
+        layout.addSpacing(10)
+        layout.addWidget(self._make_header("Quick Commands"))
+
+        self.quick_enabled_checkbox = QCheckBox("Enable quick commands")
+        self.quick_enabled_checkbox.setChecked(cfg.quick_commands_enabled)
+        self.quick_enabled_checkbox.setStyleSheet("QCheckBox { color: #333; font-weight: bold; }")
+        layout.addWidget(self.quick_enabled_checkbox)
+
+        self.quick_fuzzy_checkbox = QCheckBox("Enable fuzzy matching fallback")
+        self.quick_fuzzy_checkbox.setChecked(cfg.quick_commands_fuzzy_enabled)
+        self.quick_fuzzy_checkbox.setStyleSheet("QCheckBox { color: #333; }")
+        layout.addWidget(self.quick_fuzzy_checkbox)
+
+        self.quick_status_lbl = QLabel("")
+        self.quick_status_lbl.setStyleSheet("color: #4a5568; font-size: 11px;")
+        layout.addWidget(self.quick_status_lbl)
+
+        refresh_row = QHBoxLayout()
+        self.quick_show_all_checkbox = QCheckBox("Show all entities")
+        self.quick_show_all_checkbox.setChecked(False)
+        self.quick_show_all_checkbox.setStyleSheet("QCheckBox { color: #333; }")
+        self.quick_show_all_checkbox.toggled.connect(self._on_quick_entity_filter_changed)
+        refresh_row.addWidget(self.quick_show_all_checkbox)
+
+        self.quick_refresh_btn = QPushButton("Refresh Devices")
+        self.quick_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quick_refresh_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.quick_refresh_btn.clicked.connect(self._on_quick_devices_refresh)
+        refresh_row.addWidget(self.quick_refresh_btn)
+        refresh_row.addStretch()
+        layout.addLayout(refresh_row)
+
+        layout.addWidget(QLabel("Device"))
+        self.quick_device_combo = QComboBox()
+        self._style_combo(self.quick_device_combo)
+        self.quick_device_combo.currentIndexChanged.connect(self._on_quick_device_selected)
+        layout.addWidget(self.quick_device_combo)
+
+        layout.addWidget(QLabel("Phrases (comma separated)"))
+        self.quick_phrases_edit = QLineEdit()
+        self.quick_phrases_edit.setPlaceholderText("kitchen light, wohnzimmer licht")
+        self._style_input(self.quick_phrases_edit)
+        layout.addWidget(self.quick_phrases_edit)
+        self.quick_phrase_hint = QLabel("Only phrases typed here are saved.")
+        self.quick_phrase_hint.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(self.quick_phrase_hint)
+
+        self.quick_enabled_cmd_checkbox = QCheckBox("Enabled")
+        self.quick_enabled_cmd_checkbox.setChecked(True)
+        self.quick_enabled_cmd_checkbox.setStyleSheet("QCheckBox { color: #333; }")
+        layout.addWidget(self.quick_enabled_cmd_checkbox)
+
+        self.quick_create_btn = QPushButton("Create On+Off Commands")
+        self.quick_create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quick_create_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.quick_create_btn.clicked.connect(self._on_quick_command_create_for_device)
+        layout.addWidget(self.quick_create_btn)
+
+        self.quick_list = QListWidget()
+        self.quick_list.setMinimumHeight(140)
+        self.quick_list.itemSelectionChanged.connect(self._on_quick_command_selected)
+        self.quick_list.setStyleSheet("QListWidget { background: #f3f4f6; border: 1px solid #ccc; border-radius: 8px; color: #222; }")
+        layout.addWidget(self.quick_list)
+        self.quick_list_hint = QLabel("List shows phrase and action target.")
+        self.quick_list_hint.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(self.quick_list_hint)
+
+        quick_btn_row = QHBoxLayout()
+        self.quick_delete_btn = QPushButton("Delete Selected")
+        self.quick_delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quick_delete_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.quick_delete_btn.clicked.connect(self._on_quick_command_delete)
+        quick_btn_row.addWidget(self.quick_delete_btn)
+        quick_btn_row.addStretch()
+        layout.addLayout(quick_btn_row)
+
+        self.quick_selected_id = None
+        self._quick_entities = []
+        self._reload_quick_commands_ui()
+        self._on_quick_devices_refresh()
+
         layout.addStretch()
         self.tabs.addTab(self._wrap_tab_page(page), "Speech")
         self.voice_combo.currentIndexChanged.connect(self._update_piper_quality_visibility)
@@ -1097,7 +1176,7 @@ class SettingsDialog(QDialog):
 
     def _on_test_ollama_connection(self):
         if not self.llm_worker:
-            self.model_status.setText("LLM worker unavailable")
+            self._set_model_status("LLM worker unavailable", "error")
             return
 
         base = self._current_ollama_base_url()
@@ -1105,10 +1184,10 @@ class SettingsDialog(QDialog):
         if result.get("ok"):
             # Apply tested endpoint immediately for this session so model list reflects it.
             cfg.ollama_api_url = base
-            self.model_status.setText(f"Connected: {result.get('model_count', 0)} model(s) @ {base}")
+            self._set_model_status(f"Connected: {result.get('model_count', 0)} model(s) @ {base}", "success")
             self.refresh_installed_models()
         else:
-            self.model_status.setText(f"Connection failed @ {base}: {result.get('error', 'unknown error')}")
+            self._set_model_status(f"Connection failed @ {base}: {result.get('error', 'unknown error')}", "error")
 
     def update_ui_state(self, provider):
         # same logic but cleaner checks
@@ -1129,9 +1208,10 @@ class SettingsDialog(QDialog):
             self.ollama_hint_lbl.setVisible(is_ollama)
         if hasattr(self, "test_ollama_btn"):
             self.test_ollama_btn.setVisible(is_ollama)
-        self.progress_bar.setVisible(False) # Hide progress bar when switching providers
+        if hasattr(self, "download_container"):
+            self.download_container.setVisible(is_ollama)
         if not is_ollama:
-            self.model_status.setText("")
+            self._set_model_status("", "info")
         # We can't easily hide the layout headers without keeping refs, 
         # but for now let's just handle the inputs.
         
@@ -1184,6 +1264,10 @@ class SettingsDialog(QDialog):
         cfg.tts_voice_id = self.voice_combo.currentData()
         cfg.wake_word_enabled = self.wake_word_checkbox.isChecked()
         cfg.wake_word = self.wake_word_edit.text()
+        if hasattr(self, "quick_enabled_checkbox"):
+            cfg.quick_commands_enabled = self.quick_enabled_checkbox.isChecked()
+        if hasattr(self, "quick_fuzzy_checkbox"):
+            cfg.quick_commands_fuzzy_enabled = self.quick_fuzzy_checkbox.isChecked()
 
         def _parse_float(value: str, fallback: float) -> float:
             try:
@@ -1229,6 +1313,12 @@ class SettingsDialog(QDialog):
                  self.controller.switch_profile(new_profile)
              except Exception as e:
                  logger.error(f"Could not switch profile: {e}")
+
+        if self.controller and hasattr(self.controller, "apply_runtime_settings"):
+            try:
+                self.controller.apply_runtime_settings()
+            except Exception as e:
+                logger.error(f"Could not apply runtime settings: {e}")
         
         self.accept()
 
@@ -1311,6 +1401,223 @@ class SettingsDialog(QDialog):
             self.profile_combo.addItems(profs)
             self.profile_combo.setCurrentText("default")
 
+    def _set_quick_status(self, text: str, level: str = "info"):
+        colors = {
+            "info": "#4a5568",
+            "success": "#2f855a",
+            "error": "#c53030",
+        }
+        color = colors.get(level, colors["info"])
+        self.quick_status_lbl.setStyleSheet(f"color: {color}; font-size: 11px;")
+        self.quick_status_lbl.setText(text)
+
+    def _ensure_download_row(self, model_name: str) -> dict:
+        row = self.download_rows.get(model_name)
+        if row:
+            return row
+        row_widget = QWidget(self.download_container)
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(8)
+
+        label = QLabel(model_name)
+        label.setStyleSheet("color: #555; font-size: 10px; font-weight: 600;")
+
+        bar = QProgressBar()
+        bar.setFixedHeight(8)
+        bar.setTextVisible(False)
+        bar.setRange(0, 100)
+        bar.setValue(0)
+        bar.setStyleSheet(f"""
+            QProgressBar {{ background: #DDD; border: none; border-radius: 4px; }}
+            QProgressBar::chunk {{ background: {COLOR_ELECTRIC_BLUE}; border-radius: 4px; }}
+        """)
+
+        cancel_btn = QPushButton()
+        cancel_btn.setFixedSize(24, 24)
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setToolTip(f"Cancel download: {model_name}")
+        cancel_btn.setIcon(_load_icon("close.svg"))
+        cancel_btn.setIconSize(QSize(10, 10))
+        cancel_btn.setStyleSheet("QPushButton { color: #888; border: 1px solid #CCC; border-radius: 12px; font-weight: bold; background: white; } QPushButton:hover { color: red; border-color: red; }")
+        cancel_btn.clicked.connect(lambda _=False, n=model_name: self._cancel_download(n))
+
+        row_layout.addWidget(label)
+        row_layout.addWidget(bar, 1)
+        row_layout.addWidget(cancel_btn)
+        self.download_container_layout.addWidget(row_widget)
+
+        row = {"widget": row_widget, "label": label, "bar": bar, "cancel": cancel_btn}
+        self.download_rows[model_name] = row
+        return row
+
+    def _update_download_row(self, model_name: str, status: str, pct: int):
+        row = self._ensure_download_row(model_name)
+        row["label"].setText(f"{model_name}: {status}")
+        row["widget"].setVisible(True)
+        if pct >= 0:
+            row["bar"].setRange(0, 100)
+            row["bar"].setValue(pct)
+            row["cancel"].setVisible(True)
+            row["cancel"].setEnabled(True)
+        else:
+            row["bar"].setRange(0, 100)
+            row["bar"].setValue(100 if "Finished" in status else 0)
+            row["cancel"].setVisible(False)
+
+    def _restore_model_download_ui_state(self):
+        if not self.llm_worker or cfg.api_provider != "ollama":
+            return
+        states = self.llm_worker.get_download_states() if hasattr(self.llm_worker, "get_download_states") else {}
+        if not states:
+            return
+        active_items = [(m, st) for m, st in states.items() if st.get("active")]
+        if not active_items:
+            return
+        for model_name, state in active_items:
+            status = state.get("status") or f"Downloading: {model_name}"
+            pct = int(state.get("pct", -1) or -1)
+            self._update_download_row(model_name, status, pct)
+        self._set_model_status(f"Downloading {len(active_items)} model(s)...", "info")
+
+    def _set_model_status(self, text: str, level: str = "info"):
+        colors = {
+            "info": "#4a5568",
+            "success": "#2f855a",
+            "error": "#c53030",
+        }
+        color = colors.get(level, colors["info"])
+        self.model_status.setStyleSheet(f"color: {color}; font-size: 11px;")
+        self.model_status.setText(text)
+
+    def _reload_quick_commands_ui(self):
+        if not self.controller or not hasattr(self, "quick_list"):
+            return
+        self.quick_list.clear()
+        commands = self.controller.list_quick_commands()
+        for cmd in commands:
+            phrases = ", ".join(cmd.get("phrases", [])[:2])
+            action = cmd.get("action", {}) or {}
+            service = action.get("service", "")
+            target = action.get("entity_id", "")
+            self.quick_list.addItem(f"{phrases} -> {service} {target}")
+            item = self.quick_list.item(self.quick_list.count() - 1)
+            item.setData(Qt.ItemDataRole.UserRole, cmd)
+        self._set_quick_status(f"Loaded {len(commands)} quick command(s)", "info")
+
+    def _set_quick_entities(self, entities: list[dict]):
+        self._quick_entities = entities or []
+        current_id = self.quick_device_combo.currentData()
+        self.quick_device_combo.blockSignals(True)
+        self.quick_device_combo.clear()
+        for ent in self._quick_entities:
+            label = f"{ent.get('name', ent.get('entity_id', ''))} ({ent.get('entity_id', '')})"
+            self.quick_device_combo.addItem(label, ent.get("entity_id"))
+        self.quick_device_combo.blockSignals(False)
+
+        if self.quick_device_combo.count() == 0:
+            self.quick_phrases_edit.clear()
+            return
+
+        if current_id:
+            idx = self.quick_device_combo.findData(current_id)
+            if idx >= 0:
+                self.quick_device_combo.setCurrentIndex(idx)
+            else:
+                self.quick_device_combo.setCurrentIndex(0)
+        else:
+            self.quick_device_combo.setCurrentIndex(0)
+
+        self._on_quick_device_selected()
+
+    def _on_quick_entity_filter_changed(self, *_):
+        self._on_quick_devices_refresh()
+
+    def _on_quick_devices_refresh(self, *_):
+        if not self.controller:
+            return
+        include_all = self.quick_show_all_checkbox.isChecked()
+        result = self.controller.refresh_quick_command_entities(include_all=include_all)
+        entities = result.get("entities", [])
+        self._set_quick_entities(entities)
+
+        if result.get("status") == "success":
+            self._set_quick_status(
+                f"Devices refreshed: {result.get('count', len(entities))} available",
+                "success",
+            )
+        else:
+            self._set_quick_status(
+                f"Refresh failed: {result.get('error', 'unknown error')} (showing previous list)",
+                "error",
+            )
+
+    def _on_quick_device_selected(self, *_):
+        if not self.controller or not self._quick_entities:
+            return
+        entity_id = self.quick_device_combo.currentData()
+        if not entity_id:
+            return
+        entity = next((e for e in self._quick_entities if e.get("entity_id") == entity_id), None)
+        if not entity:
+            return
+        phrases = self.controller.suggest_quick_phrases(entity)
+        self.quick_phrases_edit.setText(", ".join(phrases[:4]))
+
+    def _on_quick_command_selected(self):
+        if not self.quick_list.selectedItems():
+            self.quick_selected_id = None
+            return
+        item = self.quick_list.selectedItems()[0]
+        cmd = item.data(Qt.ItemDataRole.UserRole) or {}
+        self.quick_selected_id = cmd.get("id")
+
+        action = cmd.get("action", {}) or {}
+        entity_id = action.get("entity_id")
+        if entity_id:
+            idx = self.quick_device_combo.findData(entity_id)
+            if idx >= 0:
+                self.quick_device_combo.setCurrentIndex(idx)
+
+        phrases = cmd.get("phrases", []) or []
+        if phrases:
+            self.quick_phrases_edit.setText(", ".join(phrases[:8]))
+            self._set_quick_status("Loaded selected command for editing.", "info")
+
+    def _on_quick_command_create_for_device(self, *_):
+        if not self.controller:
+            return
+        entity_id = self.quick_device_combo.currentData()
+        if not entity_id:
+            self._set_quick_status("No device selected.", "error")
+            return
+        phrases = [p.strip() for p in self.quick_phrases_edit.text().split(",") if p.strip()]
+        result = self.controller.create_quick_commands_for_entity(
+            entity_id=entity_id,
+            phrases=phrases,
+            enabled=self.quick_enabled_cmd_checkbox.isChecked(),
+        )
+        if result.get("status") == "success":
+            self._reload_quick_commands_ui()
+            self._set_quick_status(
+                f"Saved quick commands: +{result.get('created', 0)} new, {result.get('updated', 0)} updated, {result.get('phrase_count', 0)} phrase(s)",
+                "success",
+            )
+        else:
+            self._set_quick_status(f"Save failed: {result.get('error', 'unknown error')}", "error")
+
+    def _on_quick_command_delete(self, *_):
+        if not self.controller or not self.quick_selected_id:
+            self._set_quick_status("Select a quick command to delete.", "error")
+            return
+        result = self.controller.delete_quick_command(self.quick_selected_id)
+        if result.get("status") == "success":
+            self.quick_selected_id = None
+            self._reload_quick_commands_ui()
+            self._set_quick_status("Quick command deleted.", "success")
+        else:
+            self._set_quick_status("Command not found.", "error")
+
     # --- Model Helpers (Simplified for the new layout) ---
     def _clear_layout(self, layout):
         if not layout: return
@@ -1341,7 +1648,7 @@ class SettingsDialog(QDialog):
         self.render_installed_models()
         self.render_catalog_models()
         if hasattr(self, "model_status") and cfg.api_provider == "ollama":
-            self.model_status.setText(f"Connected endpoint: {cfg.ollama_api_url}")
+            self._set_model_status(f"Connected endpoint: {cfg.ollama_api_url}", "info")
 
     def render_installed_models(self):
         if not hasattr(self, 'installed_container'): return
@@ -1352,21 +1659,46 @@ class SettingsDialog(QDialog):
         self.installed_container.addStretch() # Keep at top
 
     def render_catalog_models(self):
-        if not hasattr(self, 'catalog_container'): return
+        if not hasattr(self, 'catalog_container'):
+            return
         self._clear_layout(self.catalog_container)
-        text = self.model_search.text().lower()
-        
+        text = self.model_search.text().lower().strip()
+
         # Auto-switch to browse tab if searching
         if text and hasattr(self, 'model_tabs'):
             self.model_tabs.setCurrentIndex(1)
-            
+
         if not hasattr(self, 'catalog_models') or not self.catalog_models:
-             self.catalog_models = self.llm_worker.load_catalog()
-        
-        matches = [m for m in self.catalog_models if text in m.get("name", "").lower()]
-        for m in matches: # Show all matches
-             card = self._create_model_card(m, installed=False)
-             self.catalog_container.addWidget(card)
+            self.catalog_models = self.llm_worker.load_catalog()
+
+        def _norm(name: str) -> str:
+            n = (name or '').strip().lower()
+            return n[:-7] if n.endswith(':latest') else n
+
+        installed_names = {
+            _norm((m or {}).get('name', ''))
+            for m in getattr(self, 'installed_models', [])
+            if isinstance(m, dict)
+        }
+
+        matches = []
+        for model in self.catalog_models:
+            model_name = str(model.get('name', ''))
+            if text and text not in model_name.lower():
+                continue
+            if _norm(model_name) in installed_names:
+                continue
+            matches.append(model)
+
+        if not matches:
+            empty = QLabel('No models to browse (all installed or filtered).')
+            empty.setStyleSheet('color: #777; font-size: 11px;')
+            self.catalog_container.addWidget(empty)
+        else:
+            for model in matches:
+                card = self._create_model_card(model, installed=False)
+                self.catalog_container.addWidget(card)
+
         self.catalog_container.addStretch() # Keep at top
 
     def _create_model_card(self, m, installed):
@@ -1452,26 +1784,29 @@ class SettingsDialog(QDialog):
             
         return card
     def download_model(self, name):
-        self.model_status.setText(f"Starting download: {name}...")
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(True)
-        self.cancel_dl_btn.setVisible(True) # Show cancel btn
-        
+        self._set_model_status(f"Starting download: {name}...", "info")
+        self._update_download_row(name, "Starting...", 0)
+
         def t():
             self.llm_worker.pull_model(name)
-            # Cleanup happen in _on_model_progress or here if needed, but progress handles visibility
         threading.Thread(target=t, daemon=True).start()
 
-    def _cancel_download(self):
-        self.model_status.setText("Cancelling...")
-        self.llm_worker.cancel_download()
-        self.cancel_dl_btn.setEnabled(False) # Prevent double click
+    def _cancel_download(self, model_name: str | None = None):
+        if model_name:
+            self._set_model_status(f"Cancelling {model_name}...", "info")
+            row = self.download_rows.get(model_name)
+            if row:
+                row["cancel"].setEnabled(False)
+            self.llm_worker.cancel_download(model_name)
+        else:
+            self._set_model_status("Cancelling...", "info")
+            self.llm_worker.cancel_download()
 
     def delete_model(self, name):
         reply = QMessageBox.question(self, "Delete Model", f"Are you sure you want to delete '{name}'?",
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            self.model_status.setText(f"Deleting {name}...")
+            self._set_model_status(f"Deleting {name}...", "info")
             def t():
                 res = self.llm_worker.remove_model(name)
                 success = (res.get("status") == "success")
@@ -1481,29 +1816,23 @@ class SettingsDialog(QDialog):
 
     def _on_model_deleted(self, name, success, error):
         if success:
-            self.model_status.setText(f"Deleted {name}.")
+            self._set_model_status(f"Deleted {name}.", "success")
         else:
-            self.model_status.setText(f"Error deleting: {error}")
+            self._set_model_status(f"Error deleting: {error}", "error")
             
-        QTimer.singleShot(2000, lambda: self.model_status.setText(""))
+        QTimer.singleShot(2000, lambda: self._set_model_status("", "info"))
         QTimer.singleShot(100, self.refresh_installed_models)
 
-    def _on_model_progress(self, status, pct):
-        self.model_status.setText(status)
-        if pct >= 0:
-            self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(pct)
-            self.cancel_dl_btn.setVisible(True)
-            self.cancel_dl_btn.setEnabled(True)
-        else:
-            # Done or Error or Cancelled
-            self.progress_bar.setVisible(False)
-            self.cancel_dl_btn.setVisible(False)
-            self.cancel_dl_btn.setEnabled(True)
-            
-            # If successful or cancelled, refresh logic handled here or via timer
+    def _on_model_progress(self, model_name, status, pct):
+        self._set_model_status(f"{model_name}: {status}", "info")
+        self._update_download_row(model_name, status, pct)
+
+        if pct < 0:
+            row = self.download_rows.get(model_name)
+            if row and ("Finished" in status or "Cancelled" in status or status.startswith("Error:")):
+                QTimer.singleShot(2500, row["widget"].hide)
             if "Finished" in status or "Cancelled" in status:
-                QTimer.singleShot(2000, lambda: self.model_status.setText(""))
+                QTimer.singleShot(2000, lambda: self._set_model_status("", "info"))
                 QTimer.singleShot(100, self.refresh_installed_models)
 
 class MainWindow(QMainWindow):

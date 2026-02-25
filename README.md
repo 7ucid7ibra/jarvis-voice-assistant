@@ -119,6 +119,12 @@ Environment variables still override stored secrets.
 - Ollama-specific endpoint controls are shown **only when provider is set to `ollama`**.
 - For `opencode`, the model list is intentionally restricted to **`big-pickle`**.
 
+### Recent Runtime Updates
+
+- Wake-word settings now apply immediately after pressing **Save Changes** (no extra mic-button press required).
+- Model downloads support concurrent progress rows in Settings -> Intelligence (one progress bar per active model download).
+- Quick Commands authoring is available in Settings -> Speech and uses manual phrase input (comma-separated) without hidden phrase expansion.
+
 ## Project Structure
 
 ```
