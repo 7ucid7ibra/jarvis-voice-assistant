@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QScrollArea, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
     QDialog, QFormLayout, QLineEdit, QComboBox, QSlider, QDialogButtonBox,
-    QCheckBox, QProgressBar, QTabWidget, QMessageBox, QInputDialog, QListWidget
+    QCheckBox, QProgressBar, QTabWidget, QMessageBox, QInputDialog, QListWidget, QToolButton, QSizePolicy
 )
 from PyQt6.QtCore import (
     Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, 
@@ -20,6 +20,7 @@ import sys
 import psutil
 import subprocess
 import re
+import textwrap
 from pathlib import Path
 from .config import cfg, COLOR_BACKGROUND, COLOR_ACCENT_CYAN, COLOR_ACCENT_TEAL
 from .profile_paths import remove_profile_files
@@ -575,6 +576,11 @@ class SettingsDialog(QDialog):
     def mouseReleaseEvent(self, event):
         self.old_pos = None
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "model_status"):
+            self._render_model_status_preview()
+
     def _wrap_tab_page(self, page: QWidget) -> QScrollArea:
         """Wrap tab page content so only the active tab body scrolls."""
         scroll = QScrollArea()
@@ -644,7 +650,7 @@ class SettingsDialog(QDialog):
         # Provider Section
         layout.addWidget(self._make_header("AI Provider"))
         self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["ollama", "opencode", "openai", "gemini"])
+        self.provider_combo.addItems(["ollama", "lmstudio", "opencode", "openai", "gemini"])
         self.provider_combo.setCurrentText(cfg.api_provider)
         self.provider_combo.currentTextChanged.connect(self.update_ui_state)
         self._style_combo(self.provider_combo)
@@ -695,6 +701,42 @@ class SettingsDialog(QDialog):
         """)
         layout.addWidget(self.test_ollama_btn)
 
+        self.lmstudio_endpoint_header = self._make_header("LM Studio Endpoint")
+        layout.addWidget(self.lmstudio_endpoint_header)
+        self.lmstudio_url_combo = QComboBox()
+        self.lmstudio_url_combo.setEditable(True)
+        self._style_combo(self.lmstudio_url_combo)
+        self.lmstudio_url_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        for url in cfg.lmstudio_url_history:
+            self.lmstudio_url_combo.addItem(url)
+        current_lm_url = cfg.lmstudio_api_url
+        if self.lmstudio_url_combo.findText(current_lm_url) < 0:
+            self.lmstudio_url_combo.insertItem(0, current_lm_url)
+        self.lmstudio_url_combo.setCurrentText(current_lm_url)
+        layout.addWidget(self.lmstudio_url_combo)
+
+        self.lmstudio_hint_lbl = QLabel("Use host:port only (default: http://127.0.0.1:1234). App uses /v1/* and /api/v0/* automatically.")
+        self.lmstudio_hint_lbl.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(self.lmstudio_hint_lbl)
+
+        self.test_lmstudio_btn = QPushButton("Test Connection")
+        self.test_lmstudio_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.test_lmstudio_btn.clicked.connect(self._on_test_lmstudio_connection)
+        self.test_lmstudio_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {COLOR_ELECTRIC_BLUE};
+                font-weight: bold;
+                border: 1px solid {COLOR_ELECTRIC_BLUE};
+                border-radius: 6px;
+                padding: 6px 12px;
+            }}
+            QPushButton:hover {{
+                background: rgba(86, 226, 255, 0.1);
+            }}
+        """)
+        layout.addWidget(self.test_lmstudio_btn)
+
         # Model Section
         layout.addSpacing(5)
         layout.addWidget(self._make_header("Active Model"))
@@ -711,10 +753,46 @@ class SettingsDialog(QDialog):
         self.model_search.textChanged.connect(self.render_catalog_models)
         self._style_input(self.model_search)
         layout.addWidget(self.model_search)
+
+        self.custom_model_key_row = QWidget()
+        custom_row_layout = QHBoxLayout(self.custom_model_key_row)
+        custom_row_layout.setContentsMargins(0, 0, 0, 0)
+        custom_row_layout.setSpacing(8)
+        self.custom_model_key_edit = QLineEdit()
+        self.custom_model_key_edit.setPlaceholderText("LM Studio model key (e.g. lmstudio-community/...) ")
+        self._style_input(self.custom_model_key_edit)
+        self.custom_model_download_btn = QPushButton("Download Key")
+        self.custom_model_download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.custom_model_download_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.custom_model_download_btn.clicked.connect(self._on_custom_model_download)
+        custom_row_layout.addWidget(self.custom_model_key_edit, 1)
+        custom_row_layout.addWidget(self.custom_model_download_btn)
+        layout.addWidget(self.custom_model_key_row)
         
         self.model_status = QLabel("")
+        self.model_status.setWordWrap(False)
+        self.model_status.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.model_status.setStyleSheet("color: #4a5568; font-size: 11px;")
         layout.addWidget(self.model_status)
+
+        self.model_status_toggle = QToolButton()
+        self.model_status_toggle.setText("Show details ▾")
+        self.model_status_toggle.setCheckable(True)
+        self.model_status_toggle.setChecked(False)
+        self.model_status_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.model_status_toggle.setStyleSheet("QToolButton { color: #6b7280; border: none; font-size: 11px; padding: 0; text-align: left; }")
+        self.model_status_toggle.clicked.connect(self._on_model_status_toggle)
+        self.model_status_toggle.hide()
+        self._model_status_can_expand = False
+        layout.addWidget(self.model_status_toggle)
+
+        self.model_status_details = QLabel("")
+        self.model_status_details.setWordWrap(True)
+        self.model_status_details.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.model_status_details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.model_status_details.setStyleSheet("color: #6b7280; font-size: 11px;")
+        self.model_status_details.hide()
+        layout.addWidget(self.model_status_details)
 
         self.download_rows: dict[str, dict] = {}
         self.download_container = QWidget()
@@ -759,6 +837,8 @@ class SettingsDialog(QDialog):
     def _make_scroll_section(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setMinimumHeight(240) 
         scroll.setStyleSheet(f"""
             QScrollArea {{ 
@@ -835,30 +915,11 @@ class SettingsDialog(QDialog):
         layout.addSpacing(10)
         self.wake_word_checkbox = QCheckBox("Enable Wake Word")
         self.wake_word_checkbox.setChecked(cfg.wake_word_enabled)
-        self.wake_word_checkbox.setToolTip("Use openWakeWord detection in idle mode. Say: Hey Jarvis.")
-        self.wake_word_checkbox.setStyleSheet(f"""
-            QCheckBox {{ color: #333; font-weight: bold; }}
-            QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
-            QCheckBox::indicator:checked {{ background: {COLOR_ELECTRIC_BLUE}; border-color: {COLOR_ELECTRIC_BLUE}; }}
-        """)
+        self.wake_word_checkbox.setToolTip("Use openWakeWord detection in idle mode.")
+        self.wake_word_checkbox.setStyleSheet("QCheckBox { color: #333; font-weight: bold; }")
         layout.addWidget(self.wake_word_checkbox)
 
-        self.wake_word_edit = QLineEdit(cfg.wake_word)
-        self.wake_word_edit.setPlaceholderText("Wake phrase (e.g. Hey Jarvis)...")
-        self.wake_word_edit.setEnabled(self.wake_word_checkbox.isChecked())
-        self.wake_word_edit.setStyleSheet(f"""
-            QLineEdit {{
-                background: {COLOR_SCREEN_BG};
-                color: white;
-                border: 1px solid #333;
-                border-radius: 4px;
-                padding: 8px;
-            }}
-            QLineEdit:disabled {{ background: #DDD; color: #888; border: 1px solid #CCC; }}
-        """)
-        self.wake_word_checkbox.toggled.connect(self.wake_word_edit.setEnabled)
-        layout.addWidget(self.wake_word_edit)        
-        wake_note = QLabel("Built-in openWakeWord model expects phrase-level trigger.")
+        wake_note = QLabel('Wake phrase: "Hey Jarvis" (fixed openWakeWord model).')
         wake_note.setStyleSheet("color: #888; font-size: 10px;")
         layout.addWidget(wake_note)
         layout.addWidget(QLabel("Wake command silence timeout (seconds)"))
@@ -926,7 +987,7 @@ class SettingsDialog(QDialog):
         self.quick_phrases_edit.setPlaceholderText("kitchen light, wohnzimmer licht")
         self._style_input(self.quick_phrases_edit)
         layout.addWidget(self.quick_phrases_edit)
-        self.quick_phrase_hint = QLabel("Only phrases typed here are saved.")
+        self.quick_phrase_hint = QLabel("Base phrase expands to: <name>, <name> an/aus, schalte <name> an/aus.")
         self.quick_phrase_hint.setStyleSheet("color: #888; font-size: 10px;")
         layout.addWidget(self.quick_phrase_hint)
 
@@ -1174,6 +1235,10 @@ class SettingsDialog(QDialog):
         raw = self.ollama_url_combo.currentText() if hasattr(self, "ollama_url_combo") else cfg.ollama_api_url
         return cfg._normalize_ollama_base_url(raw)
 
+    def _current_lmstudio_base_url(self) -> str:
+        raw = self.lmstudio_url_combo.currentText() if hasattr(self, "lmstudio_url_combo") else cfg.lmstudio_api_url
+        return cfg._normalize_lmstudio_base_url(raw)
+
     def _on_test_ollama_connection(self):
         if not self.llm_worker:
             self._set_model_status("LLM worker unavailable", "error")
@@ -1189,17 +1254,53 @@ class SettingsDialog(QDialog):
         else:
             self._set_model_status(f"Connection failed @ {base}: {result.get('error', 'unknown error')}", "error")
 
+    def _on_test_lmstudio_connection(self):
+        if not self.llm_worker:
+            self._set_model_status("LLM worker unavailable", "error")
+            return
+
+        base = self._current_lmstudio_base_url()
+        result = self.llm_worker.test_lmstudio_connection(base)
+        if result.get("ok"):
+            cfg.lmstudio_api_url = base
+            v0_count = result.get("v0_model_count", result.get("model_count", 0))
+            v1_count = result.get("v1_model_count", 0)
+            selected_ok = result.get("selected_model_visible_in_v1", True)
+            diag = (result.get("diagnostic_message") or "").strip()
+
+            status = f"Connected: /api/v0={v0_count}, /v1={v1_count} @ {base}"
+            if not selected_ok and diag:
+                status = f"{status}. {diag}"
+                self._set_model_status(status, "error")
+            else:
+                self._set_model_status(status, "success")
+
+            self.refresh_installed_models()
+        else:
+            self._set_model_status(f"Connection failed @ {base}: {result.get('error', 'unknown error')}", "error")
+
     def update_ui_state(self, provider):
         # same logic but cleaner checks
         is_ollama = (provider == "ollama")
+        is_lmstudio = (provider == "lmstudio")
+        is_local_model_provider = is_ollama or is_lmstudio
         is_opencode = ("opencode" in provider)
         is_openai_gemini = provider in ["openai", "gemini"]
         
         # Visibility toggles
-        self.model_search.setVisible(is_ollama)
-        self.model_status.setVisible(is_ollama)
+        self.model_search.setVisible(is_local_model_provider)
+        self.model_status.setVisible(is_local_model_provider)
+        if hasattr(self, "model_status_toggle"):
+            can_expand = bool(getattr(self, "_model_status_can_expand", False))
+            self.model_status_toggle.setVisible(is_local_model_provider and can_expand)
+        if hasattr(self, "model_status_details"):
+            self.model_status_details.setVisible(
+                is_local_model_provider
+                and bool(getattr(self, "_model_status_can_expand", False))
+                and self.model_status_toggle.isChecked()
+            )
         self.api_key_edit.setVisible(is_openai_gemini)
-        self.model_tabs.setVisible(is_ollama)
+        self.model_tabs.setVisible(is_local_model_provider)
         if hasattr(self, "ollama_endpoint_header"):
             self.ollama_endpoint_header.setVisible(is_ollama)
         if hasattr(self, "ollama_url_combo"):
@@ -1208,9 +1309,19 @@ class SettingsDialog(QDialog):
             self.ollama_hint_lbl.setVisible(is_ollama)
         if hasattr(self, "test_ollama_btn"):
             self.test_ollama_btn.setVisible(is_ollama)
+        if hasattr(self, "lmstudio_endpoint_header"):
+            self.lmstudio_endpoint_header.setVisible(is_lmstudio)
+        if hasattr(self, "lmstudio_url_combo"):
+            self.lmstudio_url_combo.setVisible(is_lmstudio)
+        if hasattr(self, "lmstudio_hint_lbl"):
+            self.lmstudio_hint_lbl.setVisible(is_lmstudio)
+        if hasattr(self, "test_lmstudio_btn"):
+            self.test_lmstudio_btn.setVisible(is_lmstudio)
+        if hasattr(self, "custom_model_key_row"):
+            self.custom_model_key_row.setVisible(is_lmstudio)
         if hasattr(self, "download_container"):
-            self.download_container.setVisible(is_ollama)
-        if not is_ollama:
+            self.download_container.setVisible(is_local_model_provider)
+        if not is_local_model_provider:
             self._set_model_status("", "info")
         # We can't easily hide the layout headers without keeping refs, 
         # but for now let's just handle the inputs.
@@ -1229,7 +1340,7 @@ class SettingsDialog(QDialog):
                  self.model_edit.setCurrentIndex(idx)
              else:
                  self.model_edit.setCurrentIndex(0) # Default to first
-        elif is_ollama:
+        elif is_local_model_provider:
              self.refresh_installed_models()
         else:
              self.model_edit.clear()
@@ -1251,9 +1362,18 @@ class SettingsDialog(QDialog):
             cfg.ollama_api_url = current_base
             history = [current_base] + [u for u in cfg.ollama_url_history if u != current_base]
             cfg.ollama_url_history = history[:5]
-        # Use data if available (for opencode friendly names), else fall back to text
+        if hasattr(self, "lmstudio_url_combo"):
+            current_lm_base = cfg._normalize_lmstudio_base_url(self.lmstudio_url_combo.currentText())
+            cfg.lmstudio_api_url = current_lm_base
+            lm_history = [current_lm_base] + [u for u in cfg.lmstudio_url_history if u != current_lm_base]
+            cfg.lmstudio_url_history = lm_history[:5]
+        # Use data if available, else fall back to text
         model_data = self.model_edit.currentData()
-        cfg.ollama_model = model_data if model_data else self.model_edit.currentText()
+        selected_model = model_data if model_data else self.model_edit.currentText()
+        if cfg.api_provider == "lmstudio":
+            cfg.lmstudio_model = selected_model
+        else:
+            cfg.ollama_model = selected_model
         cfg.whisper_model = self.whisper_combo.currentText()
         
         l_text = self.language_combo.currentText()
@@ -1263,7 +1383,7 @@ class SettingsDialog(QDialog):
         
         cfg.tts_voice_id = self.voice_combo.currentData()
         cfg.wake_word_enabled = self.wake_word_checkbox.isChecked()
-        cfg.wake_word = self.wake_word_edit.text()
+        cfg.wake_word = "hey jarvis"
         if hasattr(self, "quick_enabled_checkbox"):
             cfg.quick_commands_enabled = self.quick_enabled_checkbox.isChecked()
         if hasattr(self, "quick_fuzzy_checkbox"):
@@ -1453,7 +1573,8 @@ class SettingsDialog(QDialog):
 
     def _update_download_row(self, model_name: str, status: str, pct: int):
         row = self._ensure_download_row(model_name)
-        row["label"].setText(f"{model_name}: {status}")
+        display_name = model_name.split("::", 1)[1] if "::" in model_name else model_name
+        row["label"].setText(f"{display_name}: {status}")
         row["widget"].setVisible(True)
         if pct >= 0:
             row["bar"].setRange(0, 100)
@@ -1466,7 +1587,10 @@ class SettingsDialog(QDialog):
             row["cancel"].setVisible(False)
 
     def _restore_model_download_ui_state(self):
-        if not self.llm_worker or cfg.api_provider != "ollama":
+        if not self.llm_worker:
+            return
+        provider = self.provider_combo.currentText() if hasattr(self, "provider_combo") else cfg.api_provider
+        if provider not in {"ollama", "lmstudio"}:
             return
         states = self.llm_worker.get_download_states() if hasattr(self.llm_worker, "get_download_states") else {}
         if not states:
@@ -1474,11 +1598,41 @@ class SettingsDialog(QDialog):
         active_items = [(m, st) for m, st in states.items() if st.get("active")]
         if not active_items:
             return
+        provider_prefix = f"{provider}::"
+        visible_items = []
         for model_name, state in active_items:
+            if "::" in model_name and not model_name.startswith(provider_prefix):
+                continue
+            visible_items.append((model_name, state))
+
+        for model_name, state in visible_items:
             status = state.get("status") or f"Downloading: {model_name}"
             pct = int(state.get("pct", -1) or -1)
             self._update_download_row(model_name, status, pct)
-        self._set_model_status(f"Downloading {len(active_items)} model(s)...", "info")
+
+        if visible_items:
+            self._set_model_status(f"Downloading {len(visible_items)} model(s)...", "info")
+
+    def _format_model_status_details(self, text: str) -> str:
+        # Hard-wrap long exception payloads so they never force horizontal growth.
+        return "\n".join(textwrap.wrap(text, width=120, break_long_words=True, break_on_hyphens=False))
+
+    def _render_model_status_preview(self):
+        full = (getattr(self, "_model_status_full_text", "") or "").strip()
+        if not full:
+            self.model_status.setText("")
+            return
+        metrics = self.model_status.fontMetrics()
+        width = max(50, self.model_status.width() - 8)
+        self.model_status.setText(metrics.elidedText(full, Qt.TextElideMode.ElideRight, width))
+
+    def _on_model_status_toggle(self):
+        expanded = bool(self.model_status_toggle.isChecked())
+        self.model_status.setVisible(not expanded)
+        self.model_status_details.setVisible(expanded)
+        self.model_status_toggle.setText("Hide details ▴" if expanded else "Show details ▾")
+        if not expanded:
+            self._render_model_status_preview()
 
     def _set_model_status(self, text: str, level: str = "info"):
         colors = {
@@ -1488,7 +1642,34 @@ class SettingsDialog(QDialog):
         }
         color = colors.get(level, colors["info"])
         self.model_status.setStyleSheet(f"color: {color}; font-size: 11px;")
-        self.model_status.setText(text)
+        self.model_status_details.setStyleSheet(f"color: {color}; font-size: 11px;")
+
+        clean_text = (text or "").strip()
+        self._model_status_full_text = clean_text
+        if not clean_text:
+            self._model_status_can_expand = False
+            self.model_status.setText("")
+            self.model_status.show()
+            self.model_status_toggle.hide()
+            self.model_status_toggle.setChecked(False)
+            self.model_status_details.hide()
+            self.model_status_details.setText("")
+            return
+
+        self.model_status_details.setText(self._format_model_status_details(clean_text))
+
+        needs_expand = len(clean_text) > 90
+        self._model_status_can_expand = needs_expand
+        self.model_status_toggle.setChecked(False)
+        self.model_status.setVisible(True)
+        self.model_status_details.setVisible(False)
+        self._render_model_status_preview()
+
+        if needs_expand:
+            self.model_status_toggle.show()
+            self.model_status_toggle.setText("Show details ▾")
+        else:
+            self.model_status_toggle.hide()
 
     def _reload_quick_commands_ui(self):
         if not self.controller or not hasattr(self, "quick_list"):
@@ -1632,23 +1813,37 @@ class SettingsDialog(QDialog):
                 self._clear_layout(item.layout())
 
     def refresh_installed_models(self):
-        if not self.llm_worker: return
-        self.installed_models = self.llm_worker.list_models_detailed()
-        
-        current = self.model_edit.currentText()
+        if not self.llm_worker:
+            return
+        provider = self.provider_combo.currentText() if hasattr(self, "provider_combo") else cfg.api_provider
+        self.installed_models = self.llm_worker.list_models_detailed(provider=provider)
+
+        saved_model = cfg.lmstudio_model if provider == "lmstudio" else cfg.ollama_model
         self.model_edit.clear()
         if self.installed_models:
-            self.model_edit.addItems([m["name"] for m in self.installed_models])
-        else:
-            self.model_edit.addItems(["qwen2.5:0.5b"]) # Fallback
-            
-        # restore selection if possible
-        if current: self.model_edit.setCurrentText(current)
-            
+            for m in self.installed_models:
+                self.model_edit.addItem(m.get("name", ""), m.get("name", ""))
+        elif provider == "ollama":
+            self.model_edit.addItems(["qwen2.5:0.5b"])
+
+        if saved_model:
+            idx = self.model_edit.findData(saved_model)
+            if idx >= 0:
+                self.model_edit.setCurrentIndex(idx)
+            else:
+                self.model_edit.setCurrentText(saved_model)
+
         self.render_installed_models()
         self.render_catalog_models()
-        if hasattr(self, "model_status") and cfg.api_provider == "ollama":
-            self._set_model_status(f"Connected endpoint: {cfg.ollama_api_url}", "info")
+        if hasattr(self, "model_status"):
+            if provider == "ollama":
+                self._set_model_status(f"Connected endpoint: {cfg.ollama_api_url}", "info")
+            elif provider == "lmstudio":
+                selected = cfg.lmstudio_model or "(none selected)"
+                self._set_model_status(
+                    f"Connected endpoint: {cfg.lmstudio_api_url} | model: {selected}",
+                    "info",
+                )
 
     def render_installed_models(self):
         if not hasattr(self, 'installed_container'): return
@@ -1668,8 +1863,13 @@ class SettingsDialog(QDialog):
         if text and hasattr(self, 'model_tabs'):
             self.model_tabs.setCurrentIndex(1)
 
+        provider = self.provider_combo.currentText() if hasattr(self, "provider_combo") else cfg.api_provider
+        if getattr(self, "_catalog_provider", None) != provider:
+            self.catalog_models = []
+            self._catalog_provider = provider
+
         if not hasattr(self, 'catalog_models') or not self.catalog_models:
-            self.catalog_models = self.llm_worker.load_catalog()
+            self.catalog_models = self.llm_worker.load_catalog(provider=provider)
 
         def _norm(name: str) -> str:
             n = (name or '').strip().lower()
@@ -1756,7 +1956,7 @@ class SettingsDialog(QDialog):
                 }}
                 QPushButton:hover {{ background: #E0E5EB; border-color: #BBB; }}
             """)
-            btn.clicked.connect(lambda: self.model_edit.setCurrentText(name))
+            btn.clicked.connect(lambda: self._use_model(name))
             main_layout.addWidget(btn)
             
             del_btn = QPushButton("🗑", card)
@@ -1783,12 +1983,38 @@ class SettingsDialog(QDialog):
             main_layout.addWidget(btn)
             
         return card
+    def _on_custom_model_download(self):
+        if not hasattr(self, "custom_model_key_edit"):
+            return
+        model_key = self.custom_model_key_edit.text().strip()
+        if not model_key:
+            self._set_model_status("Enter a LM Studio model key.", "error")
+            return
+        self.download_model(model_key)
+
+    def _use_model(self, name: str):
+        provider = self.provider_combo.currentText() if hasattr(self, "provider_combo") else cfg.api_provider
+        if provider == "lmstudio":
+            self._set_model_status(f"Loading model: {name}...", "info")
+            res = self.llm_worker.load_model_lmstudio(name)
+            if res.get("status") == "success":
+                self.model_edit.setCurrentText(name)
+                cfg.lmstudio_model = name
+                self._set_model_status(f"Loaded model: {name}", "success")
+            else:
+                self._set_model_status(f"Load failed: {res.get('error', 'unknown error')}", "error")
+            return
+
+        self.model_edit.setCurrentText(name)
+
     def download_model(self, name):
         self._set_model_status(f"Starting download: {name}...", "info")
-        self._update_download_row(name, "Starting...", 0)
+        provider = self.provider_combo.currentText() if hasattr(self, "provider_combo") else cfg.api_provider
+        download_key = f"{provider}::{name}" if "::" not in name else name
+        self._update_download_row(download_key, "Starting...", 0)
 
         def t():
-            self.llm_worker.pull_model(name)
+            self.llm_worker.pull_model(name, provider=provider)
         threading.Thread(target=t, daemon=True).start()
 
     def _cancel_download(self, model_name: str | None = None):
@@ -1807,8 +2033,9 @@ class SettingsDialog(QDialog):
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             self._set_model_status(f"Deleting {name}...", "info")
+            provider = self.provider_combo.currentText() if hasattr(self, "provider_combo") else cfg.api_provider
             def t():
-                res = self.llm_worker.remove_model(name)
+                res = self.llm_worker.remove_model(name, provider=provider)
                 success = (res.get("status") == "success")
                 error = res.get("error", "")
                 self.model_deleted.emit(name, success, error)
@@ -1824,7 +2051,8 @@ class SettingsDialog(QDialog):
         QTimer.singleShot(100, self.refresh_installed_models)
 
     def _on_model_progress(self, model_name, status, pct):
-        self._set_model_status(f"{model_name}: {status}", "info")
+        display_name = model_name.split("::", 1)[1] if "::" in model_name else model_name
+        self._set_model_status(f"{display_name}: {status}", "info")
         self._update_download_row(model_name, status, pct)
 
         if pct < 0:

@@ -1,0 +1,70 @@
+{
+  "models": [
+    {
+      "name": "lmstudio-community/Qwen2.5-0.5B-Instruct-GGUF",
+      "size": "0.5B",
+      "hardware": "CPU friendly; 8GB RAM OK",
+      "note": "Very light starter model for quick local tests."
+    },
+    {
+      "name": "lmstudio-community/Qwen2.5-1.5B-Instruct-GGUF",
+      "size": "1.5B",
+      "hardware": "CPU friendly; 8-12GB RAM",
+      "note": "Balanced tiny model for low-latency chat."
+    },
+    {
+      "name": "lmstudio-community/Llama-3.2-1B-Instruct-GGUF",
+      "size": "1B",
+      "hardware": "CPU friendly; 8GB RAM",
+      "note": "Small Llama model with good responsiveness."
+    },
+    {
+      "name": "lmstudio-community/Llama-3.2-3B-Instruct-GGUF",
+      "size": "3B",
+      "hardware": "Fast CPU or modest GPU",
+      "note": "Higher quality while still lightweight."
+    },
+    {
+      "name": "lmstudio-community/Phi-3.5-mini-instruct-GGUF",
+      "size": "3.8B",
+      "hardware": "Fast CPU; 12GB RAM recommended",
+      "note": "Strong compact reasoning model."
+    },
+    {
+      "name": "lmstudio-community/Qwen2.5-7B-Instruct-GGUF",
+      "size": "7B",
+      "hardware": "Prefer Apple Silicon GPU / discrete GPU",
+      "note": "Good quality general-purpose assistant model."
+    },
+    {
+      "name": "lmstudio-community/Mistral-7B-Instruct-v0.3-GGUF",
+      "size": "7B",
+      "hardware": "Prefer GPU; 16GB+ RAM",
+      "note": "Reliable instruction-following baseline."
+    },
+    {
+      "name": "lmstudio-community/DeepSeek-R1-Distill-Qwen-7B-GGUF",
+      "size": "7B",
+      "hardware": "Fast GPU recommended",
+      "note": "Reasoning-focused distilled model."
+    },
+    {
+      "name": "lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "size": "7B",
+      "hardware": "Fast CPU or GPU",
+      "note": "Code-focused model for development tasks."
+    },
+    {
+      "name": "lmstudio-community/Llama-3.1-8B-Instruct-GGUF",
+      "size": "8B",
+      "hardware": "GPU preferred; 16GB+ RAM",
+      "note": "General model with stronger quality."
+    },
+    {
+      "name": "lmstudio-community/Qwen2.5-14B-Instruct-GGUF",
+      "size": "14B",
+      "hardware": "High-memory GPU recommended",
+      "note": "Higher quality responses at higher compute cost."
+    }
+  ]
+}

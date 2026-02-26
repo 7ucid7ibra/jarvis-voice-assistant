@@ -134,6 +134,7 @@ class JarvisController(QObject):
         self._llm_timeout = QTimer(self)
         self._llm_timeout.setSingleShot(True)
         self._llm_timeout.timeout.connect(self._on_llm_timeout)
+        self._suppress_next_recording_finished = False
         self._start_wake_word_if_enabled()
 
     def _async_load_ha_entities(self):
@@ -372,13 +373,52 @@ class JarvisController(QObject):
         clean_phrases = []
         seen = set()
         for phrase in phrases:
-            text = (phrase or "").strip()
+            text = (phrase or "").strip().lower()
             if not text or text in seen:
                 continue
             clean_phrases.append(text)
             seen.add(text)
         if not clean_phrases:
             return {"status": "error", "error": "At least one phrase is required."}
+
+        # Controlled phrase expansion:
+        # base="fernseher" -> on: fernseher, fernseher an, schalte fernseher an
+        #                      off: fernseher aus, schalte fernseher aus
+        on_phrases: list[str] = []
+        off_phrases: list[str] = []
+        on_seen: set[str] = set()
+        off_seen: set[str] = set()
+
+        def _add_on(v: str):
+            t = v.strip()
+            if t and t not in on_seen:
+                on_seen.add(t)
+                on_phrases.append(t)
+
+        def _add_off(v: str):
+            t = v.strip()
+            if t and t not in off_seen:
+                off_seen.add(t)
+                off_phrases.append(t)
+
+        for phrase in clean_phrases:
+            p = phrase.strip()
+            if not p:
+                continue
+            if p.endswith(" an"):
+                _add_on(p)
+                continue
+            if p.endswith(" aus"):
+                _add_off(p)
+                continue
+            _add_on(p)
+            _add_on(f"{p} an")
+            _add_on(f"schalte {p} an")
+            _add_off(f"{p} aus")
+            _add_off(f"schalte {p} aus")
+
+        if not on_phrases and not off_phrases:
+            return {"status": "error", "error": "No usable phrases generated."}
 
         domain = entity.get("domain") or ""
         action_keys = ["turn_on", "turn_off"]
@@ -398,13 +438,16 @@ class JarvisController(QObject):
             key = (domain, service, entity_id)
             action = {"domain": domain, "service": service, "entity_id": entity_id}
             safety = "safe_auto" if is_safe_auto_action(action) else "requires_confirm"
+            service_phrases = on_phrases if service == "turn_on" else off_phrases
+            if not service_phrases:
+                continue
 
             existing = by_action.get(key)
             if existing is None:
                 self.quick_commands.append(
                     QuickCommand(
                         id=new_quick_command_id(f"{entity_id}_{service}"),
-                        phrases=list(clean_phrases),
+                        phrases=list(service_phrases),
                         action=action,
                         safety=safety,
                         enabled=enabled,
@@ -413,25 +456,27 @@ class JarvisController(QObject):
                 )
                 created += 1
             else:
-                existing.phrases = list(clean_phrases)
+                existing.phrases = list(service_phrases)
                 existing.safety = safety
                 existing.enabled = enabled
                 existing.meta = {**(existing.meta or {}), "source": "device_picker"}
                 updated += 1
 
         self._save_quick_commands()
+        phrase_count = len(on_phrases) + len(off_phrases)
         logger.info(
-            "quick_commands_create_for_entity entity_id=%s created=%s updated=%s phrase_count=%s",
+            "quick_commands_create_for_entity entity_id=%s created=%s updated=%s on_phrases=%s off_phrases=%s",
             entity_id,
             created,
             updated,
-            len(clean_phrases),
+            len(on_phrases),
+            len(off_phrases),
         )
         return {
             "status": "success",
             "created": created,
             "updated": updated,
-            "phrase_count": len(clean_phrases),
+            "phrase_count": phrase_count,
         }
 
     def _run_fast_intent(self, user_text: str) -> bool:
@@ -1042,6 +1087,11 @@ class JarvisController(QObject):
             # which will set state to IDLE, so we don't need to do it here
 
     def handle_recording_finished(self, audio_data):
+        if self._suppress_next_recording_finished:
+            self._suppress_next_recording_finished = False
+            logger.info("Suppressed recording callback after wake interrupt.")
+            return
+
         if len(audio_data) == 0:
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
@@ -1050,6 +1100,8 @@ class JarvisController(QObject):
         
         self.window.mic_btn.set_state(MicButton.STATE_THINKING)
         self.window.set_status("Transcribing...")
+        # Keep wake detector active so "Hey Jarvis" can interrupt long processing stages.
+        self._start_wake_word_if_enabled()
         self.request_stt.emit(audio_data)
 
     def handle_text_input(self):
@@ -1090,16 +1142,20 @@ class JarvisController(QObject):
             return
 
         state = self.window.mic_btn.state
-        if state not in (MicButton.STATE_IDLE, MicButton.STATE_SPEAKING):
-            logger.info(f"Wake word detected while state={state}; ignoring.")
-            return
-
         logger.info(f"Wake word detected: {keyword} (state={state})")
         self._stop_wake_word_listening()
 
+        # Hard interrupt: stop any active capture/playback and in-flight LLM pipeline.
+        if self.audio_recorder.recording:
+            self._suppress_next_recording_finished = True
+            self.audio_recorder.stop_recording(reason="wake_interrupt")
+
         if state == MicButton.STATE_SPEAKING:
-            logger.info("Wake interrupt during speaking: stopping TTS and switching to listening.")
+            logger.info("Wake interrupt during speaking: stopping TTS.")
             self.tts_worker.stop()
+
+        if self.current_state in ("intent", "action", "response") or state == MicButton.STATE_THINKING:
+            self._cancel_inflight("Wake interrupt")
 
         self.window.mic_btn.set_state(MicButton.STATE_LISTENING)
         self.window.set_status("Listening... (Speak now)")

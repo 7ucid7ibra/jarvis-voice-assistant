@@ -11,6 +11,9 @@ DEFAULT_WHISPER_MODEL = "base"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:0.5b"
 DEFAULT_OLLAMA_API_URL = "http://127.0.0.1:11434"
 DEFAULT_OLLAMA_URL_HISTORY = [DEFAULT_OLLAMA_API_URL]
+DEFAULT_LMSTUDIO_API_URL = "http://127.0.0.1:1234"
+DEFAULT_LMSTUDIO_URL_HISTORY = [DEFAULT_LMSTUDIO_API_URL]
+DEFAULT_LMSTUDIO_MODEL = ""
 DEFAULT_TTS_RATE = 190
 DEFAULT_TTS_VOLUME = 1.0
 DEFAULT_TTS_VOICE_ID = None
@@ -66,10 +69,10 @@ class Config:
         self._settings = self._load_settings()
         self._migrate_legacy_secrets()
 
-    def _normalize_ollama_base_url(self, value: str | None) -> str:
+    def _normalize_base_url(self, value: str | None, default: str) -> str:
         raw = (value or "").strip()
         if not raw:
-            return DEFAULT_OLLAMA_API_URL
+            return default
 
         lower = raw.lower()
         if lower.startswith("http://http://"):
@@ -83,13 +86,19 @@ class Config:
         path = parsed.path if parsed.netloc else ""
 
         if not netloc:
-            return DEFAULT_OLLAMA_API_URL
+            return default
 
-        if path.lower().startswith("/api/"):
+        if path.lower().startswith("/api/") or path.lower().startswith("/v1"):
             path = ""
 
         normalized = f"{scheme}://{netloc}{path}".rstrip("/")
-        return normalized or DEFAULT_OLLAMA_API_URL
+        return normalized or default
+
+    def _normalize_ollama_base_url(self, value: str | None) -> str:
+        return self._normalize_base_url(value, DEFAULT_OLLAMA_API_URL)
+
+    def _normalize_lmstudio_base_url(self, value: str | None) -> str:
+        return self._normalize_base_url(value, DEFAULT_LMSTUDIO_API_URL)
 
     def _load_settings(self):
         if os.path.exists(self._settings_file):
@@ -217,6 +226,59 @@ class Config:
         if DEFAULT_OLLAMA_API_URL not in seen:
             cleaned.insert(0, DEFAULT_OLLAMA_API_URL)
         self._settings["ollama_url_history"] = cleaned[:5]
+
+    @property
+    def lmstudio_model(self):
+        return self._settings.get("lmstudio_model", DEFAULT_LMSTUDIO_MODEL)
+
+    @lmstudio_model.setter
+    def lmstudio_model(self, value):
+        self._settings["lmstudio_model"] = value
+
+    @property
+    def lmstudio_api_url(self):
+        return self._normalize_lmstudio_base_url(
+            self._settings.get("lmstudio_api_url", DEFAULT_LMSTUDIO_API_URL)
+        )
+
+    @lmstudio_api_url.setter
+    def lmstudio_api_url(self, value: str) -> None:
+        self._settings["lmstudio_api_url"] = self._normalize_lmstudio_base_url(value)
+
+    @property
+    def lmstudio_url_history(self) -> list[str]:
+        history = self._settings.get("lmstudio_url_history", DEFAULT_LMSTUDIO_URL_HISTORY)
+        if not isinstance(history, list):
+            history = []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in history:
+            if not isinstance(item, str):
+                continue
+            norm = self._normalize_lmstudio_base_url(item)
+            if norm and norm not in seen:
+                cleaned.append(norm)
+                seen.add(norm)
+        if DEFAULT_LMSTUDIO_API_URL not in seen:
+            cleaned.insert(0, DEFAULT_LMSTUDIO_API_URL)
+        return cleaned[:5]
+
+    @lmstudio_url_history.setter
+    def lmstudio_url_history(self, value: list[str]) -> None:
+        if not isinstance(value, list):
+            value = []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            norm = self._normalize_lmstudio_base_url(item)
+            if norm and norm not in seen:
+                cleaned.append(norm)
+                seen.add(norm)
+        if DEFAULT_LMSTUDIO_API_URL not in seen:
+            cleaned.insert(0, DEFAULT_LMSTUDIO_API_URL)
+        self._settings["lmstudio_url_history"] = cleaned[:5]
 
     @property
     def tts_rate(self):
