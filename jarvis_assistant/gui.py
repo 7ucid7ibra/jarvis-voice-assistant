@@ -1118,8 +1118,7 @@ class SettingsDialog(QDialog):
         weight = "bold" if bold else "normal"
         widget.setStyleSheet(f"""
             QCheckBox {{ color: #333; font-weight: {weight}; spacing: 6px; }}
-            QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
-            QCheckBox::indicator:checked {{ background: {COLOR_ELECTRIC_BLUE}; border-color: {COLOR_ELECTRIC_BLUE}; }}
+            QCheckBox::indicator {{ width: 18px; height: 18px; }}
         """)
 
     # ... Include existing helpers (_populate_voices, update_ui_state, etc.) with minor tweaks if needed ...
