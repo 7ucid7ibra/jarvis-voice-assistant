@@ -637,7 +637,16 @@ class SettingsDialog(QDialog):
         prof_hint = QLabel("Switching profiles instantly reloads memory and chat history.")
         prof_hint.setStyleSheet("color: #888; font-size: 10px;")
         layout.addWidget(prof_hint)
-        
+
+        layout.addSpacing(12)
+        layout.addWidget(self._make_header("Web Search"))
+
+        self.web_search_checkbox = QCheckBox("Enable Web Search (DuckDuckGo)")
+        self.web_search_checkbox.setChecked(cfg.web_search_enabled)
+        self.web_search_checkbox.setToolTip("Allows the assistant to search the web. Requires internet access.")
+        self._style_checkbox(self.web_search_checkbox, bold=True)
+        layout.addWidget(self.web_search_checkbox)
+
         layout.addStretch()
         self.tabs.addTab(self._wrap_tab_page(page), "General")
 
@@ -916,7 +925,7 @@ class SettingsDialog(QDialog):
         self.wake_word_checkbox = QCheckBox("Enable Wake Word")
         self.wake_word_checkbox.setChecked(cfg.wake_word_enabled)
         self.wake_word_checkbox.setToolTip("Use openWakeWord detection in idle mode.")
-        self.wake_word_checkbox.setStyleSheet("QCheckBox { color: #333; font-weight: bold; }")
+        self._style_checkbox(self.wake_word_checkbox, bold=True)
         layout.addWidget(self.wake_word_checkbox)
 
         wake_note = QLabel('Wake phrase: "Hey Jarvis" (fixed openWakeWord model).')
@@ -943,90 +952,6 @@ class SettingsDialog(QDialog):
         self.wake_vad_edit.setEnabled(self.wake_word_checkbox.isChecked())
         layout.addWidget(self.wake_vad_edit)
 
-
-        layout.addSpacing(10)
-        layout.addWidget(self._make_header("Quick Commands"))
-
-        self.quick_enabled_checkbox = QCheckBox("Enable quick commands")
-        self.quick_enabled_checkbox.setChecked(cfg.quick_commands_enabled)
-        self.quick_enabled_checkbox.setStyleSheet("QCheckBox { color: #333; font-weight: bold; }")
-        layout.addWidget(self.quick_enabled_checkbox)
-
-        self.quick_fuzzy_checkbox = QCheckBox("Enable fuzzy matching fallback")
-        self.quick_fuzzy_checkbox.setChecked(cfg.quick_commands_fuzzy_enabled)
-        self.quick_fuzzy_checkbox.setStyleSheet("QCheckBox { color: #333; }")
-        layout.addWidget(self.quick_fuzzy_checkbox)
-
-        self.quick_status_lbl = QLabel("")
-        self.quick_status_lbl.setStyleSheet("color: #4a5568; font-size: 11px;")
-        layout.addWidget(self.quick_status_lbl)
-
-        refresh_row = QHBoxLayout()
-        self.quick_show_all_checkbox = QCheckBox("Show all entities")
-        self.quick_show_all_checkbox.setChecked(False)
-        self.quick_show_all_checkbox.setStyleSheet("QCheckBox { color: #333; }")
-        self.quick_show_all_checkbox.toggled.connect(self._on_quick_entity_filter_changed)
-        refresh_row.addWidget(self.quick_show_all_checkbox)
-
-        self.quick_refresh_btn = QPushButton("Refresh Devices")
-        self.quick_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.quick_refresh_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
-        self.quick_refresh_btn.clicked.connect(self._on_quick_devices_refresh)
-        refresh_row.addWidget(self.quick_refresh_btn)
-        refresh_row.addStretch()
-        layout.addLayout(refresh_row)
-
-        layout.addWidget(QLabel("Device"))
-        self.quick_device_combo = QComboBox()
-        self._style_combo(self.quick_device_combo)
-        self.quick_device_combo.currentIndexChanged.connect(self._on_quick_device_selected)
-        layout.addWidget(self.quick_device_combo)
-
-        layout.addWidget(QLabel("Phrases (comma separated)"))
-        self.quick_phrases_edit = QLineEdit()
-        self.quick_phrases_edit.setPlaceholderText("kitchen light, wohnzimmer licht")
-        self._style_input(self.quick_phrases_edit)
-        layout.addWidget(self.quick_phrases_edit)
-        self.quick_phrase_hint = QLabel("Saved canonically as: <name> an/on and <name> aus/off. Imperative forms like 'schalte ...' are matched implicitly.")
-        self.quick_phrase_hint.setStyleSheet("color: #888; font-size: 10px;")
-        layout.addWidget(self.quick_phrase_hint)
-
-        self.quick_enabled_cmd_checkbox = QCheckBox("Enabled")
-        self.quick_enabled_cmd_checkbox.setChecked(True)
-        self.quick_enabled_cmd_checkbox.setStyleSheet("QCheckBox { color: #333; }")
-        layout.addWidget(self.quick_enabled_cmd_checkbox)
-
-        self.quick_create_btn = QPushButton("Create On+Off Commands")
-        self.quick_create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.quick_create_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
-        self.quick_create_btn.clicked.connect(self._on_quick_command_create_for_device)
-        layout.addWidget(self.quick_create_btn)
-
-        self.quick_list = QListWidget()
-        self.quick_list.setMinimumHeight(140)
-        self.quick_list.setWordWrap(True)
-        self.quick_list.setTextElideMode(Qt.TextElideMode.ElideNone)
-        self.quick_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.quick_list.itemSelectionChanged.connect(self._on_quick_command_selected)
-        self.quick_list.setStyleSheet("QListWidget { background: #f3f4f6; border: 1px solid #ccc; border-radius: 8px; color: #222; }")
-        layout.addWidget(self.quick_list)
-        self.quick_list_hint = QLabel("List shows phrase and action target.")
-        self.quick_list_hint.setStyleSheet("color: #888; font-size: 10px;")
-        layout.addWidget(self.quick_list_hint)
-
-        quick_btn_row = QHBoxLayout()
-        self.quick_delete_btn = QPushButton("Delete Selected")
-        self.quick_delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.quick_delete_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
-        self.quick_delete_btn.clicked.connect(self._on_quick_command_delete)
-        quick_btn_row.addWidget(self.quick_delete_btn)
-        quick_btn_row.addStretch()
-        layout.addLayout(quick_btn_row)
-
-        self.quick_selected_id = None
-        self._quick_entities = []
-        self._reload_quick_commands_ui()
-        self._on_quick_devices_refresh()
 
         layout.addStretch()
         self.tabs.addTab(self._wrap_tab_page(page), "Speech")
@@ -1072,17 +997,88 @@ class SettingsDialog(QDialog):
         layout.addWidget(secret_note)
 
         layout.addSpacing(12)
-        layout.addWidget(self._make_header("Web Search"))
+        layout.addWidget(self._make_header("Quick Commands"))
 
-        self.web_search_checkbox = QCheckBox("Enable Web Search (DuckDuckGo)")
-        self.web_search_checkbox.setChecked(cfg.web_search_enabled)
-        self.web_search_checkbox.setToolTip("Allows the assistant to search the web. Requires internet access.")
-        self.web_search_checkbox.setStyleSheet(f"""
-            QCheckBox {{ color: #333; font-weight: bold; }}
-            QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
-            QCheckBox::indicator:checked {{ background: {COLOR_ELECTRIC_BLUE}; border-color: {COLOR_ELECTRIC_BLUE}; }}
-        """)
-        layout.addWidget(self.web_search_checkbox)
+        self.quick_enabled_checkbox = QCheckBox("Enable quick commands")
+        self.quick_enabled_checkbox.setChecked(cfg.quick_commands_enabled)
+        self._style_checkbox(self.quick_enabled_checkbox, bold=True)
+        layout.addWidget(self.quick_enabled_checkbox)
+
+        self.quick_fuzzy_checkbox = QCheckBox("Enable fuzzy matching fallback")
+        self.quick_fuzzy_checkbox.setChecked(cfg.quick_commands_fuzzy_enabled)
+        self._style_checkbox(self.quick_fuzzy_checkbox)
+        layout.addWidget(self.quick_fuzzy_checkbox)
+
+        self.quick_status_lbl = QLabel("")
+        self.quick_status_lbl.setStyleSheet("color: #4a5568; font-size: 11px;")
+        layout.addWidget(self.quick_status_lbl)
+
+        refresh_row = QHBoxLayout()
+        self.quick_show_all_checkbox = QCheckBox("Show all entities")
+        self.quick_show_all_checkbox.setChecked(False)
+        self._style_checkbox(self.quick_show_all_checkbox)
+        self.quick_show_all_checkbox.toggled.connect(self._on_quick_entity_filter_changed)
+        refresh_row.addWidget(self.quick_show_all_checkbox)
+
+        self.quick_refresh_btn = QPushButton("Refresh Devices")
+        self.quick_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quick_refresh_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.quick_refresh_btn.clicked.connect(self._on_quick_devices_refresh)
+        refresh_row.addWidget(self.quick_refresh_btn)
+        refresh_row.addStretch()
+        layout.addLayout(refresh_row)
+
+        layout.addWidget(QLabel("Device"))
+        self.quick_device_combo = QComboBox()
+        self._style_combo(self.quick_device_combo)
+        self.quick_device_combo.currentIndexChanged.connect(self._on_quick_device_selected)
+        layout.addWidget(self.quick_device_combo)
+
+        layout.addWidget(QLabel("Phrases (comma separated)"))
+        self.quick_phrases_edit = QLineEdit()
+        self.quick_phrases_edit.setPlaceholderText("kitchen light, wohnzimmer licht")
+        self._style_input(self.quick_phrases_edit)
+        layout.addWidget(self.quick_phrases_edit)
+        self.quick_phrase_hint = QLabel("Saved canonically as: <name> an/on and <name> aus/off. Imperative forms like 'schalte ...' are matched implicitly.")
+        self.quick_phrase_hint.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(self.quick_phrase_hint)
+
+        self.quick_enabled_cmd_checkbox = QCheckBox("Enabled")
+        self.quick_enabled_cmd_checkbox.setChecked(True)
+        self._style_checkbox(self.quick_enabled_cmd_checkbox)
+        layout.addWidget(self.quick_enabled_cmd_checkbox)
+
+        self.quick_create_btn = QPushButton("Create On+Off Commands")
+        self.quick_create_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quick_create_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.quick_create_btn.clicked.connect(self._on_quick_command_create_for_device)
+        layout.addWidget(self.quick_create_btn)
+
+        self.quick_list = QListWidget()
+        self.quick_list.setMinimumHeight(140)
+        self.quick_list.setWordWrap(True)
+        self.quick_list.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.quick_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.quick_list.itemSelectionChanged.connect(self._on_quick_command_selected)
+        self.quick_list.setStyleSheet("QListWidget { background: #f3f4f6; border: 1px solid #ccc; border-radius: 8px; color: #222; }")
+        layout.addWidget(self.quick_list)
+        self.quick_list_hint = QLabel("List shows phrase and action target.")
+        self.quick_list_hint.setStyleSheet("color: #888; font-size: 10px;")
+        layout.addWidget(self.quick_list_hint)
+
+        quick_btn_row = QHBoxLayout()
+        self.quick_delete_btn = QPushButton("Delete Selected")
+        self.quick_delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.quick_delete_btn.setStyleSheet(f"QPushButton {{ background: transparent; color: {COLOR_ELECTRIC_BLUE}; font-weight: bold; border: 1px solid {COLOR_ELECTRIC_BLUE}; border-radius: 6px; padding: 6px 12px; }} QPushButton:hover {{ background: rgba(86, 226, 255, 0.1); }}")
+        self.quick_delete_btn.clicked.connect(self._on_quick_command_delete)
+        quick_btn_row.addWidget(self.quick_delete_btn)
+        quick_btn_row.addStretch()
+        layout.addLayout(quick_btn_row)
+
+        self.quick_selected_id = None
+        self._quick_entities = []
+        self._reload_quick_commands_ui()
+        self._on_quick_devices_refresh()
 
         layout.addStretch()
         self.tabs.addTab(self._wrap_tab_page(page), "Smart Home")
@@ -1116,6 +1112,14 @@ class SettingsDialog(QDialog):
                 padding: 5px;
             }}
             QComboBox::drop-down {{ border: none; }}
+        """)
+
+    def _style_checkbox(self, widget, *, bold: bool = False):
+        weight = "bold" if bold else "normal"
+        widget.setStyleSheet(f"""
+            QCheckBox {{ color: #333; font-weight: {weight}; spacing: 6px; }}
+            QCheckBox::indicator {{ width: 18px; height: 18px; border: 1px solid #AAA; border-radius: 4px; background: white; }}
+            QCheckBox::indicator:checked {{ background: {COLOR_ELECTRIC_BLUE}; border-color: {COLOR_ELECTRIC_BLUE}; }}
         """)
 
     # ... Include existing helpers (_populate_voices, update_ui_state, etc.) with minor tweaks if needed ...
