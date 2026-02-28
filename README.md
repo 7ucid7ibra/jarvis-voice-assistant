@@ -121,6 +121,7 @@ Environment variables still override stored secrets.
 
 ### Recent Runtime Updates
 
+- Progress acknowledgements (e.g., "let me think" / "working on it") are now anchored to voice recording stop, so the 2.5s timer includes transcription time.
 - Wake-word settings now apply immediately after pressing **Save Changes** (no extra mic-button press required).
 - Model downloads support concurrent progress rows in Settings -> Intelligence (one progress bar per active model download).
 - Quick Commands authoring is available in Settings -> Speech and uses manual phrase input (comma-separated) without hidden phrase expansion.

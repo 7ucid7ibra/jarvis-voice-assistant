@@ -128,7 +128,8 @@ class JarvisController(QObject):
         self._ack_stage = None
         self._ack_start_time = 0.0
         self._ack_index = 0
-        self._ack_schedule = [3000]
+        self._ack_from_voice = False
+        self._ack_schedule = [2500]
         self._ack_timer = QTimer(self)
         self._ack_timer.setSingleShot(True)
         self._ack_timer.timeout.connect(self._on_ack_timeout)
@@ -1082,7 +1083,7 @@ class JarvisController(QObject):
         return {"scheduled": True, "delay_seconds": delay_seconds, "type": "telegram_send"}
 
     def _reply_direct(self, text: str):
-        self._cancel_ack_timer()
+        self._clear_ack_cycle()
         self._cancel_llm_timeout()
         self.current_state = "idle"
         logger.info(f"Assistant: {text}")
@@ -1208,11 +1209,14 @@ class JarvisController(QObject):
             return
 
         if len(audio_data) == 0:
+            self._clear_ack_cycle()
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
             self._start_wake_word_if_enabled()
             return
         
+        self._begin_ack_cycle(source="voice")
+        self.current_state = "transcribe"
         self.window.mic_btn.set_state(MicButton.STATE_THINKING)
         self.window.set_status("Transcribing...")
         # Keep wake detector active so "Hey Jarvis" can interrupt long processing stages.
@@ -1220,7 +1224,7 @@ class JarvisController(QObject):
         self.request_stt.emit(audio_data)
 
     def handle_text_input(self):
-        if self.current_state in ("intent", "action", "response"):
+        if self.current_state in ("transcribe", "intent", "action", "response"):
             self.window.set_status("Please wait...")
             return
         text = self.window.chat_input.text().strip()
@@ -1232,6 +1236,7 @@ class JarvisController(QObject):
 
     def handle_stt_finished(self, text):
         if not text:
+            self._clear_ack_cycle()
             self.window.mic_btn.set_state(MicButton.STATE_IDLE)
             self.window.set_status("Idle")
             self._start_wake_word_if_enabled()
@@ -1300,12 +1305,11 @@ class JarvisController(QObject):
         self.window.chat_input.setEnabled(False)
         self.current_time_context = self.ha_client.get_time_context()
         self.window.set_status("Thinking (Intent)...")
-        self._ack_spoken = False
         self._action_pending = False
-        self._ack_start_time = time.time()
-        self._ack_stage = None
-        self._ack_index = 0
-        self._start_ack_timer()
+        if not self._ack_from_voice:
+            self._begin_ack_cycle(source="text")
+        else:
+            self._start_ack_timer()
         self._start_llm_timeout("intent")
         
         # Get history
@@ -1388,7 +1392,7 @@ class JarvisController(QObject):
                     return
 
                 # Direct conversation reply from IntentAgent
-                self._cancel_ack_timer()
+                self._clear_ack_cycle()
                 self._cancel_llm_timeout()
                 reply = self._sanitize_reply(response)
                 logger.info(f"Assistant (direct): {reply}")
@@ -1622,7 +1626,7 @@ class JarvisController(QObject):
             self.start_response_agent()
 
         elif self.current_state == "response":
-            self._cancel_ack_timer()
+            self._clear_ack_cycle()
             self._cancel_llm_timeout()
             # Final response
             reply = self._sanitize_reply(response)
@@ -1701,10 +1705,30 @@ class JarvisController(QObject):
         
         self.request_llm.emit(messages, "text")
 
+    def _begin_ack_cycle(self, anchor_ts: float | None = None, source: str = "text"):
+        self._ack_spoken = False
+        self._action_pending = False
+        self._ack_stage = None
+        self._ack_index = 0
+        self._ack_from_voice = source == "voice"
+        self._ack_start_time = anchor_ts or time.time()
+        self._start_ack_timer()
+
+    def _clear_ack_cycle(self):
+        self._cancel_ack_timer()
+        self._ack_spoken = False
+        self._action_pending = False
+        self._ack_stage = None
+        self._ack_index = 0
+        self._ack_start_time = 0.0
+        self._ack_from_voice = False
+
     def _start_ack_timer(self):
         if self._ack_timer.isActive():
             self._ack_timer.stop()
         if self._ack_index >= len(self._ack_schedule):
+            return
+        if self._ack_start_time <= 0:
             return
         elapsed_ms = int((time.time() - self._ack_start_time) * 1000)
         target_ms = self._ack_schedule[self._ack_index]
@@ -1716,7 +1740,7 @@ class JarvisController(QObject):
             self._ack_timer.stop()
 
     def _on_ack_timeout(self):
-        if self.current_state not in ("intent", "action", "response"):
+        if self.current_state not in ("transcribe", "intent", "action", "response"):
             return
         stage = self._stage_for_index(self._ack_index)
         ack = self._pick_ack_phrase(stage=stage)
@@ -1745,7 +1769,8 @@ class JarvisController(QObject):
 
     def _pick_ack_phrase(self, stage: str) -> str:
         is_de = cfg.language == "de"
-        if self._action_pending:
+        action_context = self._action_pending or self.current_state == "action"
+        if action_context:
             if stage == "very_long":
                 options = [
                     "Sorry for the wait. Still working on it.",
@@ -1956,10 +1981,10 @@ class JarvisController(QObject):
         return True
 
     def handle_error(self, msg):
+        self._clear_ack_cycle()
+        self._cancel_llm_timeout()
         if self._handle_remote_ollama_unreachable(msg):
             return
-        self._cancel_ack_timer()
-        self._cancel_llm_timeout()
         self.window.set_status("Error")
         self.window.add_message(f"Error: {msg}", is_user=False)
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
@@ -1967,7 +1992,7 @@ class JarvisController(QObject):
 
     def _cancel_inflight(self, reason: str):
         self._ignore_llm = True
-        self._cancel_ack_timer()
+        self._clear_ack_cycle()
         self._cancel_llm_timeout()
         self.current_state = "idle"
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
@@ -1988,6 +2013,7 @@ class JarvisController(QObject):
             self._llm_timeout.stop()
 
     def _on_llm_timeout(self):
+        self._clear_ack_cycle()
         self.window.set_status("Error")
         self.window.add_message("Error: Response timed out. Please try again.", is_user=False)
         self.window.mic_btn.set_state(MicButton.STATE_IDLE)
