@@ -987,7 +987,7 @@ class SettingsDialog(QDialog):
         self.quick_phrases_edit.setPlaceholderText("kitchen light, wohnzimmer licht")
         self._style_input(self.quick_phrases_edit)
         layout.addWidget(self.quick_phrases_edit)
-        self.quick_phrase_hint = QLabel("Base phrase expands to: <name>, <name> an/aus, schalte <name> an/aus.")
+        self.quick_phrase_hint = QLabel("Saved canonically as: <name> an/on and <name> aus/off. Imperative forms like 'schalte ...' are matched implicitly.")
         self.quick_phrase_hint.setStyleSheet("color: #888; font-size: 10px;")
         layout.addWidget(self.quick_phrase_hint)
 
@@ -1004,6 +1004,9 @@ class SettingsDialog(QDialog):
 
         self.quick_list = QListWidget()
         self.quick_list.setMinimumHeight(140)
+        self.quick_list.setWordWrap(True)
+        self.quick_list.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.quick_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.quick_list.itemSelectionChanged.connect(self._on_quick_command_selected)
         self.quick_list.setStyleSheet("QListWidget { background: #f3f4f6; border: 1px solid #ccc; border-radius: 8px; color: #222; }")
         layout.addWidget(self.quick_list)
@@ -1677,7 +1680,8 @@ class SettingsDialog(QDialog):
         self.quick_list.clear()
         commands = self.controller.list_quick_commands()
         for cmd in commands:
-            phrases = ", ".join(cmd.get("phrases", [])[:2])
+            phrase_list = [str(p).strip() for p in (cmd.get("phrases", []) or []) if str(p).strip()]
+            phrases = ", ".join(phrase_list) if phrase_list else "(no phrases)"
             action = cmd.get("action", {}) or {}
             service = action.get("service", "")
             target = action.get("entity_id", "")

@@ -41,6 +41,10 @@ from .quick_commands import (
 )
 
 
+QC_FILLER_PREFIX_TOKENS = {"bitte", "schalte", "mach", "please", "turn", "switch"}
+QC_ACTION_TOKENS = {"an", "on", "ein", "aus", "off"}
+
+
 class JarvisController(QObject):
     # Signals to drive workers
     request_stt = pyqtSignal(object)
@@ -192,6 +196,7 @@ class JarvisController(QObject):
 
         self.quick_command_store = QuickCommandStore(profile)
         self.quick_commands = self.quick_command_store.load_commands()
+        self._normalize_existing_quick_commands()
         self.fast_intent_router = FastIntentRouter(
             self.quick_commands,
             fuzzy_enabled=cfg.quick_commands_fuzzy_enabled,
@@ -267,6 +272,152 @@ class JarvisController(QObject):
 
     def list_quick_commands(self) -> list[dict]:
         return [c.to_dict() for c in self.quick_commands]
+
+    def _normalize_quick_phrase_text(self, text: str) -> str:
+        cleaned = re.sub(r"[^\w\s]", " ", (text or "").lower(), flags=re.UNICODE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _extract_quick_base_alias(self, phrase: str) -> str:
+        normalized = self._normalize_quick_phrase_text(phrase)
+        if not normalized:
+            return ""
+        tokens = normalized.split(" ")
+        if not tokens:
+            return ""
+
+        while tokens and tokens[0] in QC_FILLER_PREFIX_TOKENS:
+            tokens.pop(0)
+        while tokens and tokens[0] in QC_ACTION_TOKENS:
+            tokens.pop(0)
+        while tokens and tokens[0] in QC_FILLER_PREFIX_TOKENS:
+            tokens.pop(0)
+        while tokens and tokens[-1] in QC_ACTION_TOKENS:
+            tokens.pop()
+
+        return " ".join(tokens).strip()
+
+    def _build_canonical_quick_phrases(self, base_aliases: list[str]) -> tuple[list[str], list[str]]:
+        on_phrases: list[str] = []
+        off_phrases: list[str] = []
+        on_seen: set[str] = set()
+        off_seen: set[str] = set()
+
+        for base in base_aliases:
+            base_norm = self._extract_quick_base_alias(base)
+            if not base_norm:
+                continue
+
+            for phrase in (f"{base_norm} an", f"{base_norm} on"):
+                if phrase not in on_seen:
+                    on_seen.add(phrase)
+                    on_phrases.append(phrase)
+
+            for phrase in (f"{base_norm} aus", f"{base_norm} off"):
+                if phrase not in off_seen:
+                    off_seen.add(phrase)
+                    off_phrases.append(phrase)
+
+        return on_phrases, off_phrases
+
+    def _normalize_existing_quick_commands(self) -> None:
+        if not self.quick_commands:
+            return
+
+        grouped: dict[tuple[str, str], dict[str, QuickCommand | None]] = {}
+        for cmd in self.quick_commands:
+            action = cmd.action or {}
+            entity_id = str(action.get("entity_id") or "").strip()
+            service = str(action.get("service") or "").strip().lower()
+            domain = str(action.get("domain") or "").strip().lower()
+            if not entity_id or service not in {"turn_on", "turn_off"}:
+                continue
+            if not domain and "." in entity_id:
+                domain = entity_id.split(".", 1)[0].strip().lower()
+            if not domain:
+                continue
+
+            key = (domain, entity_id)
+            if key not in grouped:
+                grouped[key] = {"turn_on": None, "turn_off": None}
+            if grouped[key].get(service) is None:
+                grouped[key][service] = cmd
+
+        if not grouped:
+            return
+
+        changed = False
+        normalized_commands = 0
+        created_counterparts = 0
+
+        for (domain, entity_id), pair in grouped.items():
+            base_aliases: list[str] = []
+            seen_bases: set[str] = set()
+
+            for existing in (pair.get("turn_on"), pair.get("turn_off")):
+                if not existing:
+                    continue
+                for phrase in existing.phrases:
+                    base = self._extract_quick_base_alias(phrase)
+                    if base and base not in seen_bases:
+                        seen_bases.add(base)
+                        base_aliases.append(base)
+
+            if not base_aliases:
+                fallback_seed = entity_id.split(".", 1)[-1].replace("_", " ")
+                fallback = self._extract_quick_base_alias(fallback_seed)
+                if fallback:
+                    base_aliases.append(fallback)
+
+            if not base_aliases:
+                continue
+
+            on_phrases, off_phrases = self._build_canonical_quick_phrases(base_aliases)
+            if not on_phrases or not off_phrases:
+                continue
+
+            template = pair.get("turn_on") or pair.get("turn_off")
+            for service, service_phrases in (("turn_on", on_phrases), ("turn_off", off_phrases)):
+                action = {"domain": domain, "service": service, "entity_id": entity_id}
+                safety = "safe_auto" if is_safe_auto_action(action) else "requires_confirm"
+                existing = pair.get(service)
+
+                if existing is None:
+                    new_cmd = QuickCommand(
+                        id=new_quick_command_id(f"{entity_id}_{service}"),
+                        phrases=list(service_phrases),
+                        action=action,
+                        safety=safety,
+                        enabled=template.enabled if template else True,
+                        meta=dict(template.meta or {}) if template else {},
+                    )
+                    self.quick_commands.append(new_cmd)
+                    pair[service] = new_cmd
+                    changed = True
+                    normalized_commands += 1
+                    created_counterparts += 1
+                    continue
+
+                existing_changed = (
+                    existing.phrases != service_phrases
+                    or existing.action != action
+                    or existing.safety != safety
+                )
+                if existing_changed:
+                    existing.phrases = list(service_phrases)
+                    existing.action = action
+                    existing.safety = safety
+                    changed = True
+                    normalized_commands += 1
+
+        if changed:
+            self._save_quick_commands()
+            logger.info(
+                "quick_commands_normalized profile=%s normalized=%s created_counterparts=%s",
+                cfg.current_profile,
+                normalized_commands,
+                created_counterparts,
+            )
 
     def upsert_quick_command(
         self,
@@ -370,54 +521,20 @@ class JarvisController(QObject):
         if entity is None:
             return {"status": "error", "error": "Entity no longer available."}
 
-        clean_phrases = []
-        seen = set()
+        base_aliases: list[str] = []
+        seen_bases: set[str] = set()
         for phrase in phrases:
-            text = (phrase or "").strip().lower()
-            if not text or text in seen:
+            base = self._extract_quick_base_alias(phrase)
+            if not base or base in seen_bases:
                 continue
-            clean_phrases.append(text)
-            seen.add(text)
-        if not clean_phrases:
+            seen_bases.add(base)
+            base_aliases.append(base)
+
+        if not base_aliases:
             return {"status": "error", "error": "At least one phrase is required."}
 
-        # Controlled phrase expansion:
-        # base="fernseher" -> on: fernseher, fernseher an, schalte fernseher an
-        #                      off: fernseher aus, schalte fernseher aus
-        on_phrases: list[str] = []
-        off_phrases: list[str] = []
-        on_seen: set[str] = set()
-        off_seen: set[str] = set()
-
-        def _add_on(v: str):
-            t = v.strip()
-            if t and t not in on_seen:
-                on_seen.add(t)
-                on_phrases.append(t)
-
-        def _add_off(v: str):
-            t = v.strip()
-            if t and t not in off_seen:
-                off_seen.add(t)
-                off_phrases.append(t)
-
-        for phrase in clean_phrases:
-            p = phrase.strip()
-            if not p:
-                continue
-            if p.endswith(" an"):
-                _add_on(p)
-                continue
-            if p.endswith(" aus"):
-                _add_off(p)
-                continue
-            _add_on(p)
-            _add_on(f"{p} an")
-            _add_on(f"schalte {p} an")
-            _add_off(f"{p} aus")
-            _add_off(f"schalte {p} aus")
-
-        if not on_phrases and not off_phrases:
+        on_phrases, off_phrases = self._build_canonical_quick_phrases(base_aliases)
+        if not on_phrases or not off_phrases:
             return {"status": "error", "error": "No usable phrases generated."}
 
         domain = entity.get("domain") or ""
@@ -439,8 +556,6 @@ class JarvisController(QObject):
             action = {"domain": domain, "service": service, "entity_id": entity_id}
             safety = "safe_auto" if is_safe_auto_action(action) else "requires_confirm"
             service_phrases = on_phrases if service == "turn_on" else off_phrases
-            if not service_phrases:
-                continue
 
             existing = by_action.get(key)
             if existing is None:
